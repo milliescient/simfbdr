@@ -35,8 +35,12 @@ def ess(x):
     return n / (1.0 + 2.0 * s)
 
 
-def main(argv=None):
-    run = (argv or sys.argv[1:])[0].rstrip("/")
+def collect(run):
+    """Per-replicate ranks for one run: (rate names, replicate numbers, rank matrix, counts).
+
+    A replicate is kept only where every rate's chain reached ESS_MIN, so two runs keep
+    different replicates and have to be aligned on the ones both kept before differencing.
+    """
     batch = os.path.dirname(os.path.dirname(run))
     tv = np.genfromtxt(os.path.join(batch, "true_vals.tsv"), delimiter="\t", names=True)
     ni = sum(1 for c in tv.dtype.names if c.startswith("lambda"))
@@ -54,7 +58,7 @@ def main(argv=None):
     want = int(conf["GENS"]) // int(conf["PRINTGEN"]) + 1
 
     out = os.path.join(run, "output")
-    ranks, kept, seen, partial = [], 0, 0, 0
+    ranks, reps, seen, partial = [], [], 0, 0
     for fn in sorted(os.listdir(out)):
         if not fn.endswith(".log") or "_" not in fn:
             continue
@@ -76,15 +80,21 @@ def main(argv=None):
         a = a[int(a.shape[0] * BURN):]
         if min(ess(a[:, j]) for j in range(a.shape[1])) < ESS_MIN:
             continue
-        rep = int(fn.rsplit("_", 1)[1][:-4])
-        ranks.append((a < np.array([tv[c][rep - 1] for c in tcols])).mean(axis=0))
-        kept += 1
+        reps.append(int(fn.rsplit("_", 1)[1][:-4]))
+        ranks.append((a < np.array([tv[c][reps[-1] - 1] for c in tcols])).mean(axis=0))
+
+    return rates, reps, np.array(ranks), (seen, partial, youngest)
+
+
+def main(argv=None):
+    run = (argv or sys.argv[1:])[0].rstrip("/")
+    rates, reps, R, (seen, partial, youngest) = collect(run)
+    kept = len(reps)
 
     print(f"\n{run}  truth {'youngest' if youngest else 'oldest'}-first"
           f"  kept {kept} of {seen}  ({partial} still running, {seen - partial - kept} low ESS)")
     if kept < 2:
         return
-    R = np.array(ranks)
     se = 1.0 / np.sqrt(12 * kept)
     crit = 1.36 / np.sqrt(kept)
     # the mean alone cannot see a width mismatch, which is what a wrong prior scale gives
