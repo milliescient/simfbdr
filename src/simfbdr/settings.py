@@ -70,6 +70,9 @@ RUN_SETTINGS = [
      "which start of a range the log carries: origination, the species' own, which both "
      "processes report and which a cross-model comparison needs; or divergence, where it "
      "attaches to the nearest sampled range, which only dnFBDRP has"),
+    ("REQUIRE_PARENT", "inference.require_parent",
+     "reject a birth with no lineage alive to have produced it. Left out it follows "
+     "coexistence; turn it off where ranges were left out of the analysis"),
     ("COEXISTENCE", "inference.coexistence",
      "weight each birth by the lineages alive to produce it. Left out, each process keeps "
      "its own published default: dnFBDRP weights them, dnBDS does not"),
