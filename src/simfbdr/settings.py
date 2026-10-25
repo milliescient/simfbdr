@@ -66,6 +66,10 @@ RUN_SETTINGS = [
     ("LATENTS", "inference.monitor_latents",
      "false drops the per-taxon b, d, tau_1 and tau_K from the log, which a rates-only "
      "comparison never reads and which costs 63 MB a replicate on a thousand ranges"),
+    ("RANGE_START", "inference.range_start",
+     "which start of a range the log carries: origination, the species' own, which both "
+     "processes report and which a cross-model comparison needs; or divergence, where it "
+     "attaches to the nearest sampled range, which only dnFBDRP has"),
     ("COEXISTENCE", "inference.coexistence",
      "weight each birth by the lineages alive to produce it. Left out, each process keeps "
      "its own published default: dnFBDRP weights them, dnBDS does not"),
@@ -98,7 +102,7 @@ RUN_REQUIRED = ["MODEL", "REPORTING", "INFER", "COND", "RHO", "GENS", "PRINTGEN"
 # defaults/run.yml, not here.
 
 # a setting that takes one of a few words
-CHOICES = {"MODEL": ("fbdrp", "bds"), "INFER": ("complete", "firstlast"),
+CHOICES = {"RANGE_START": ("origination", "divergence"), "MODEL": ("fbdrp", "bds"), "INFER": ("complete", "firstlast"),
            "COND": ("time", "sampling", "survival", "nTaxa"),
            "TAXA_COUNT": ("fossil", "record"),
            "ORIGIN_PRIOR": ("uniform", "exponential", "none"),

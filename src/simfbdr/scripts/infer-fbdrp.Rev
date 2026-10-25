@@ -5,7 +5,8 @@
 ### that generated the data and the analysis of it read one definition, so they
 ### cannot drift apart.
 ###
-### Set before sourcing: rep, SKYLINE, COMPLETE, COND, RHO, COEXISTENCE, GENS, PRINTGEN,
+### Set before sourcing: rep, SKYLINE, COMPLETE, COND, RHO, COEXISTENCE, RANGE_START,
+###   GENS, PRINTGEN,
 ###   OCCURRENCES, BATCHDIR, OUTDIR, the GAMMA_ settings, AGE_MIN, AGE_MAX,
 ###   ORIGIN_PRIOR, MAXFA
 
@@ -88,10 +89,15 @@ org  := bd.getOrigin()
 # comparison never reads. org is a scalar and stays either way.
 if (!exists("LATENTS")) LATENTS <- TRUE
 if (LATENTS) {
-    # the species' own start, which both processes report. Under dnBDS no lineage goes
-    # unsampled so it is the birth time itself, and a divergence would not be the same
-    # quantity. mean integrates the conditional instead of drawing from it.
-    bb   := bd.getOriginationTimes(mean=true)
+    # RANGE_START names which start the log carries, so summarize.R can score it against the
+    # matching truth: the two differ by the chain of unsampled ancestors. Drawn, not the
+    # conditional mean, whose spread leaves out the conditional variance and would make a rank
+    # against it over-dispersed.
+    if (RANGE_START == "divergence") {
+        bb   := bd.getDivergenceTimes()
+    } else {
+        bb   := bd.getOriginationTimes()
+    }
     dd   := bd.getExtinctionTimes()
     tau1 := bd.getFirstAppearances()
     tauK := bd.getLastAppearances()

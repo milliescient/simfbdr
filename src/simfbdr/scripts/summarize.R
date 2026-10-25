@@ -220,14 +220,22 @@ latent_stats <- function(mf, ids) {
     kcols <- grep("^tauK\\[", names(ll))
     k_mat <- if (nonext && length(kcols) == n_taxa) as.matrix(ll[keep, kcols, drop = FALSE]) else NULL
 
-    # b is where this lineage last branched off a SAMPLED one, not the taxon's own origination:
-    # the stem above o_i uses the unsampled propagator q, which permits any number of species
-    # changes between the branching and the first fossil. Walk up through unsampled ancestors.
+    # Which start the run logged decides which truth scores it, and the two differ by the chain
+    # of unsampled ancestors. A divergence is where this lineage last branched off a SAMPLED
+    # one: the stem above o_i uses the unsampled propagator q, which permits any number of
+    # species changes between the branching and the first fossil, so it takes a walk up through
+    # the unsampled ancestors. An origination is the taxon's own TS, with no walk. Scoring one
+    # against the other would read the unsampled chain as bias.
+    divergence <- identical(mf$RANGE_START, "divergence")
     true_b_all <- numeric(length(taxa))
     founder <- logical(length(taxa))
     off_root <- numeric(length(taxa))
     for (j in seq_along(taxa)) {
       k <- as.integer(sub("t", "", taxa[j]))
+      if (!divergence) {
+        true_b_all[j] <- s$TS[k]
+        next
+      }
       cur <- k
       par <- s$PAR[cur]
       while (!is.na(par) && !(par %in% sim_idx)) { cur <- par; par <- s$PAR[cur] }

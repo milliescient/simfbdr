@@ -137,6 +137,9 @@ def analyze(run, force=False, jobs=1, slots=None, slot_dir=None):
             f"generated under {b['RHO']}.")
     if r["MODEL"] != "bds" and r["DROP_PRESENT_ONLY"] == "true":
         die(f"{rcfg} sets inference.drop_present_only_taxa, which only the bds model reads.")
+    if r["MODEL"] == "bds" and r["RANGE_START"] == "divergence":
+        die(f"{rcfg} asks for divergence times, which dnBDS does not offer: under complete "
+            f"lineage sampling a birth is the species' own origination.")
     template = tools.script(TEMPLATES[r["MODEL"]])
     complete = "true" if r["INFER"] == "complete" else "false"
     occurrences = f"occurrences_{r['REPORTING']}"
@@ -212,7 +215,8 @@ def analyze(run, force=False, jobs=1, slots=None, slot_dir=None):
         # out gets the process's own default: dnFBDRP weights each birth, dnBDS does not
         coex = r["COEXISTENCE"] or ("false" if r["MODEL"] == "bds" else "true")
         head += [f"DROP_PRESENT_ONLY <- {r['DROP_PRESENT_ONLY']}",
-                 f"LATENTS <- {r['LATENTS']}", f"COEXISTENCE <- {coex}"]
+                 f"LATENTS <- {r['LATENTS']}", f"COEXISTENCE <- {coex}",
+                 f'RANGE_START <- "{r["RANGE_START"]}"']
         head += [f'BINDIR <- "{tools.SCRIPTS}"'] + treated
         head += [f'source("{template}")']
         rev = os.path.join(work, f"run_{rep}.Rev")

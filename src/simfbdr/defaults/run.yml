@@ -19,6 +19,9 @@ inference:
                              # the oldest birth is the process start under an improper flat
                              # prior and the matrix moves sample it
   monitor_latents: true          # false writes the rates only, so there are no latent ranks
+  range_start: origination       # origination | divergence. origination is the species' own start,
+                                 # which both processes report; divergence is where the range attaches
+                                 # to the nearest sampled one, which only dnFBDRP has
   coexistence:                   # left out, each process keeps its own published default: dnFBDRP
                                  # weights every birth by the lineages alive to produce it, dnBDS does not
   drop_present_only_taxa: false # bds only

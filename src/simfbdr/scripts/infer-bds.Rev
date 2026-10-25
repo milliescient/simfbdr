@@ -8,7 +8,8 @@
 ### that generated the data and the analysis of it read one definition, so they
 ### cannot drift apart.
 ###
-### Set before sourcing: rep, SKYLINE, COMPLETE, COND, RHO, COEXISTENCE, GENS, PRINTGEN,
+### Set before sourcing: rep, SKYLINE, COMPLETE, COND, RHO, COEXISTENCE, RANGE_START,
+###   GENS, PRINTGEN,
 ###   OCCURRENCES, BATCHDIR, OUTDIR, the GAMMA_ settings, AGE_MIN, AGE_MAX,
 ###   ORIGIN_PRIOR, MAXFA
 
@@ -109,10 +110,10 @@ org  := bd.getOrigin()
 # comparison never reads. org is a scalar and stays either way.
 if (!exists("LATENTS")) LATENTS <- TRUE
 if (LATENTS) {
-    # the species' own start, which both processes report. Under dnBDS no lineage goes
-    # unsampled so it is the birth time itself, and a divergence would not be the same
-    # quantity. mean integrates the conditional instead of drawing from it.
-    bb   := bd.getOriginationTimes(mean=true)
+    # Under complete lineage sampling a birth is the species' own origination, so there is no
+    # divergence to offer and RANGE_START can only be origination here. The conditional is
+    # degenerate at the birth time, so the draw is that time.
+    bb   := bd.getOriginationTimes()
     dd   := bd.getExtinctionTimes()
     tau1 := bd.getFirstAppearances()
     tauK := bd.getLastAppearances()
