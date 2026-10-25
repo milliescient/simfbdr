@@ -5,7 +5,7 @@
 ### that generated the data and the analysis of it read one definition, so they
 ### cannot drift apart.
 ###
-### Set before sourcing: rep, SKYLINE, COMPLETE, COND, RHO, GENS, PRINTGEN,
+### Set before sourcing: rep, SKYLINE, COMPLETE, COND, RHO, COEXISTENCE, GENS, PRINTGEN,
 ###   OCCURRENCES, BATCHDIR, OUTDIR, the GAMMA_ settings, AGE_MIN, AGE_MAX,
 ###   ORIGIN_PRIOR, MAXFA
 
@@ -42,23 +42,28 @@ if (ORIGIN_PRIOR != "none") {
 if (ORIGIN_PRIOR == "none") {
     if (SKYLINE) {
         bd ~ dnFBDRP(taxa=taxa, lambda=lambda, mu=mu, psi=psi, rho=RHO, present=PRESENT,
-                 timeline=timeline, condition=COND)
+                 timeline=timeline, condition=COND, coexistence=COEXISTENCE)
     } else {
         bd ~ dnFBDRP(taxa=taxa, lambda=lambda, mu=mu, psi=psi, rho=RHO, present=PRESENT,
-                 condition=COND)
+                 condition=COND, coexistence=COEXISTENCE)
     }
 } else {
     if (SKYLINE) {
         bd ~ dnFBDRP(taxa=taxa, lambda=lambda, mu=mu, psi=psi, rho=RHO, present=PRESENT,
-                 timeline=timeline, condition=COND, origin=origin)
+                 timeline=timeline, condition=COND, origin=origin, coexistence=COEXISTENCE)
     } else {
         bd ~ dnFBDRP(taxa=taxa, lambda=lambda, mu=mu, psi=psi, rho=RHO, present=PRESENT,
-                 condition=COND, origin=origin)
+                 condition=COND, origin=origin, coexistence=COEXISTENCE)
     }
 }
 
-# the reporting model is its own node now, clamped to the observed record
-rec ~ dnFossilRecord(ranges=bd, complete=COMPLETE)
+# the reporting model is its own node now, clamped to the observed record, and it names the
+# rule rather than flagging it
+if (COMPLETE) {
+    rec ~ dnFossilRecord(ranges=bd, reporting="complete")
+} else {
+    rec ~ dnFossilRecord(ranges=bd, reporting="firstlast")
+}
 rec.clamp(taxa)
 
 moves.append( mvMatrixElementScale(bd, lambda=0.01, weight=taxa.size()/10) )
@@ -83,7 +88,10 @@ org  := bd.getOrigin()
 # comparison never reads. org is a scalar and stays either way.
 if (!exists("LATENTS")) LATENTS <- TRUE
 if (LATENTS) {
-    bb   := bd.getOriginationTimes()
+    # the species' own start, which both processes report. Under dnBDS no lineage goes
+    # unsampled so it is the birth time itself, and a divergence would not be the same
+    # quantity. mean integrates the conditional instead of drawing from it.
+    bb   := bd.getOriginationTimes(mean=true)
     dd   := bd.getExtinctionTimes()
     tau1 := bd.getFirstAppearances()
     tauK := bd.getLastAppearances()

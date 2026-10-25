@@ -66,6 +66,9 @@ RUN_SETTINGS = [
     ("LATENTS", "inference.monitor_latents",
      "false drops the per-taxon b, d, tau_1 and tau_K from the log, which a rates-only "
      "comparison never reads and which costs 63 MB a replicate on a thousand ranges"),
+    ("COEXISTENCE", "inference.coexistence",
+     "weight each birth by the lineages alive to produce it. Left out, each process keeps "
+     "its own published default: dnFBDRP weights them, dnBDS does not"),
     ("DROP_PRESENT_ONLY", "inference.drop_present_only_taxa", "bds only"),
     ("GENS", "mcmc.generations", ""),
     ("PRINTGEN", "mcmc.sample_every", ""),

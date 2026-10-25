@@ -208,8 +208,11 @@ def analyze(run, force=False, jobs=1, slots=None, slot_dir=None):
                 f'BATCHDIR <- "{absolute(batch)}"', f'OCCURRENCES <- "{occurrences}"',
                 f'OUTDIR <- "{absolute(to)}"']
         head += [f"{k} <- {v[k]}" for k in PRIORS]
+        # the coexistence factor belongs to the published model, so a config that leaves it
+        # out gets the process's own default: dnFBDRP weights each birth, dnBDS does not
+        coex = r["COEXISTENCE"] or ("false" if r["MODEL"] == "bds" else "true")
         head += [f"DROP_PRESENT_ONLY <- {r['DROP_PRESENT_ONLY']}",
-                 f"LATENTS <- {r['LATENTS']}"]
+                 f"LATENTS <- {r['LATENTS']}", f"COEXISTENCE <- {coex}"]
         head += [f'BINDIR <- "{tools.SCRIPTS}"'] + treated
         head += [f'source("{template}")']
         rev = os.path.join(work, f"run_{rep}.Rev")
