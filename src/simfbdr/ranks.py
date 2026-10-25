@@ -10,6 +10,7 @@ import os
 import sys
 import numpy as np
 
+from . import config
 from . import manifest
 
 ESS_MIN = 100.0
@@ -51,10 +52,15 @@ def collect(run):
     rates = [f"{r}[{i}]" for r in ("lambda", "mu", "psi") for i in range(1, ni + 1)]
     tcols = [f"{r}{i}" for r in ("lambda", "mu", "psi") for i in idx]
 
-    # a chain still being written is not a posterior, so require the full sample count
+    # a chain still being written is not a posterior, so require the full sample count. The
+    # manifest is written when analyze finishes, so a run still going is read from its config
+    # instead: the sample-count guard below is what keeps a partial chain out, not the manifest.
     conf = manifest.flat(run)
     if "GENS" not in conf:
-        sys.exit(f"{run} has no manifest: run simfbdr analyze on it first")
+        rcfg = os.path.join(run, "config.yml")
+        if not os.path.exists(rcfg):
+            sys.exit(f"{run} has no manifest: run simfbdr analyze on it first")
+        conf = config.load(rcfg, "run")
     want = int(conf["GENS"]) // int(conf["PRINTGEN"]) + 1
 
     out = os.path.join(run, "output")
