@@ -38,8 +38,8 @@ record:
   rho:                             # the extant sampling probability. unset, every lineage alive at the
                                    # present is seen, and a run may assume any value
   occurrence_bins:
-    width:                         # required. occurrence ages are reported to these bins
-    oldest_edge:                   # required
+    width:                         # required. occurrence ages are reported to bins of this width,
+                                   # with an edge at every multiple of it, as far back as a tree reaches
     also_widths:                   # a list. the same record on other grids too, as occurrences_<model>_w<width>; 0 is the exact ages
     also_offsets:                  # a list. each of those shifted by this fraction of a bin as well, as ..._o<offset>
 

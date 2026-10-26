@@ -28,8 +28,7 @@ BATCH_SETTINGS = [
     ("RHO", "record.rho",
      "the extant sampling probability: the chance a lineage alive at the present is seen there"),
     ("BIN_WIDTH", "record.occurrence_bins.width",
-     "occurrence ages are reported to these bins"),
-    ("BIN_MAX", "record.occurrence_bins.oldest_edge", ""),
+     "occurrence ages are reported to bins of this width, edges at every multiple of it without end"),
     ("BIN_WIDTHS", "record.occurrence_bins.also_widths",
      "the same record on other grids too, as occurrences_<model>_w<width>; 0 is the exact ages"),
     ("BIN_OFFSETS", "record.occurrence_bins.also_offsets",
@@ -120,7 +119,7 @@ RUN_RECORD = {
 
 # what a batch cannot be simulated without, and a run cannot be analyzed without
 BATCH_REQUIRED = ["NINTERVALS", "INTERVAL_WIDTH", "GAMMA_L_SHAPE", "GAMMA_M_SHAPE", "GAMMA_P_SHAPE",
-                  "GAMMA_P_RATE", "AGE_MIN", "AGE_MAX", "BIN_WIDTH", "BIN_MAX"]
+                  "GAMMA_P_RATE", "AGE_MIN", "AGE_MAX", "BIN_WIDTH"]
 RUN_REQUIRED = ["MODEL", "REPORTING", "INFER", "COND", "RHO", "GENS", "PRINTGEN"]
 # The value a setting takes when a config leaves it out is in defaults/batch.yml and
 # defaults/run.yml, not here.

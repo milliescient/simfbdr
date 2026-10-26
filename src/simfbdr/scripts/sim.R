@@ -132,7 +132,7 @@ GAMMA_M_SHAPE <- cfg("GAMMA_M_SHAPE"); GAMMA_M_RATE <- cfg_opt("GAMMA_M_RATE", N
 GAMMA_P_SHAPE <- cfg("GAMMA_P_SHAPE"); GAMMA_P_RATE <- cfg("GAMMA_P_RATE")
 GAMMA_RATE_MAX <- cfg_opt("GAMMA_RATE_MAX", 20)
 AGE_MIN <- cfg("AGE_MIN"); AGE_MAX <- cfg("AGE_MAX")
-BIN_WIDTH <- cfg("BIN_WIDTH"); BIN_MAX <- cfg("BIN_MAX")
+BIN_WIDTH <- cfg("BIN_WIDTH")
 
 # a key holding several numbers, comma separated; unset is none
 cfg_list <- function(k) {
@@ -152,12 +152,14 @@ more_grids <- unique(do.call(rbind, c(list(data.frame(w = numeric(0), off = nume
   lapply(BIN_WIDTHS, function(w) data.frame(w = w, off = if (w == 0) 0 else BIN_OFFSETS)))))
 grid_label <- function(w, off) paste0("w", w, if (off != 0) paste0("_o", off))
 
-# An age's cell on a grid, (lower, upper] as paleobuddy's are. The grid stops at PRESENT and at
-# AGE_MAX, which the analysis knows anyway, so an offset grid has no bin past the origin prior.
+# An age's cell on a grid, (lower, upper] as paleobuddy's are. The grid stops at PRESENT, and a
+# bin straddling AGE_MAX stops there, which the analysis knows anyway, so an offset grid has no
+# bin reaching past the origin prior. Bins wholly above it, which only a tree drawn backward from
+# its survivors reaches, are left whole.
 rebin <- function(age, w, off) {
   if (w == 0) return(list(min = age, max = age))
   hi <- w * (off + ceiling(age / w - off))
-  list(min = pmax(hi - w, PRESENT), max = pmin(hi, AGE_MAX))
+  list(min = pmax(hi - w, PRESENT), max = ifelse(hi - w < AGE_MAX, pmin(hi, AGE_MAX), hi))
 }
 
 # Off the grid, the top occurrence bin runs past AGE_MAX, so no origin the prior can draw
@@ -239,7 +241,9 @@ discretized_gamma <- function(alpha, K) {
 # the start, so these are age - cov_breaks there.
 # the intervals partition the process's own span, which starts at PRESENT rather than zero
 cov_breaks <- PRESENT + INTERVAL_WIDTH * seq_len(NINTERVALS - 1)
-cov_bins <- seq(0, BIN_MAX, BIN_WIDTH)
+# Occurrence bins are every multiple of BIN_WIDTH, without end. Each replicate builds them as far
+# back as its tree reaches; the edges do not depend on how deep that is.
+bins_to <- function(age) seq(0, BIN_WIDTH * (floor(age / BIN_WIDTH) + 1), BIN_WIDTH)
 
 # Truth, named, in one place, so the names travel with the values.
 truth_of <- function(th, lambda, mu, psi, age) {
@@ -397,6 +401,7 @@ if (is.finite(SIM_MAX_DRAWS)) {
 # truncates the prior and the ranks are non-uniform by exactly that much: the number belongs
 # in the record of every batch, not just in a pilot.
 sim_filtered <- 0
+sim_declining <- 0
 sim_drawn <- 0
 bd_sim_bounded <- function(n0, lambda, mu, tMax, lShifts, mShifts, nFinal) {
   # paleobuddy refuses shifts alongside a constant rate, and the lone shift a single
@@ -420,7 +425,7 @@ bd_sim_bounded <- function(n0, lambda, mu, tMax, lShifts, mShifts, nFinal) {
 # output rather than a draw. FossilSim then assigns budding species identity to the complete
 # tree: beta = 0 is budding, lambda.a = 0 no anagenesis. Both packages index rates
 # youngest-first, and the pipeline carries them oldest-first, so both arguments reverse.
-backward_sim <- function(n_extant, lambda, mu, psi, breaks, bins, alpha = NULL, lambda_a = 0) {
+backward_sim <- function(n_extant, lambda, mu, psi, breaks, alpha = NULL, lambda_a = 0) {
   tr <- TreeSim::sim.rateshift.taxa(n = n_extant, numbsim = 1,
                                     lambda = rev(lambda), mu = rev(mu),
                                     frac = rep(1, length(lambda)),
@@ -485,6 +490,8 @@ backward_sim <- function(n_extant, lambda, mu, psi, breaks, bins, alpha = NULL, 
     return(list(SIM = sim, FOSSILS = f, AGE = max(TS), COMP = comp))
   }
   k <- idx[fos$sp]
+  # the origin is an output here, so the bins are built out to the tree that was drawn
+  bins <- bins_to(max(TS))
   j <- findInterval(fos$hmin, bins)
   f <- data.frame(Species = paste0("t", k), Extant = extant[k], SampT = fos$hmin,
                   MaxT = bins[j + 1], MinT = bins[j], stringsAsFactors = FALSE)
@@ -556,8 +563,8 @@ simulate_rep <- function(rates, age, shifts,
   
   # get bins
   if (sbc) {
-    # fixed grid; binning up to age would put a bin edge on the origin
-    bins <- cov_bins
+    # edges on the fixed grid, built out past the origin
+    bins <- bins_to(age)
   } else {
     # if not, make bins
     bins <- make_bins(age, unc)
@@ -577,7 +584,7 @@ simulate_rep <- function(rates, age, shifts,
     age <<- t$age; tMax <<- t$age
     lambda <<- t$lambda; mu <<- t$mu; psi <<- t$psi
     lShifts <<- mShifts <<- pShifts <<- c(0, t$age - rev(cov_breaks))
-    bins <<- cov_bins
+    bins <<- bins_to(t$age)
   }
   redraw <- function() {
     sim_drawn <<- sim_drawn + 1
@@ -589,22 +596,27 @@ simulate_rep <- function(rates, age, shifts,
     if (BACKWARD) {
       # The extant count fixes the standing diversity, not the total: leaving N_EXTANT
       # survivors costs about N_EXTANT / (1 - mu/lambda) species, which diverges as turnover
-      # approaches 1 and is unreachable above it, where the process declines. Refuse those
-      # before simulating, as the forward path refuses its own runaways. This truncates the
-      # prior, so the count belongs in the batch record.
-      if (sbc && is.finite(MAX_LINEAGES)) {
-        total_species <- function() {
-          r <- mean(mu) / mean(lambda)
-          if (r >= 1) return(Inf)
-          N_EXTANT / (1 - r)
+      # approaches 1 and is unreachable above it, where the process declines. And a tree whose
+      # oldest interval declines (mu > lambda) may never find a root, since that interval runs
+      # back without end. Both are refused before simulating, as the forward path refuses its own
+      # runaways, in one loop so that a draw one of them redraws faces the other again. Both
+      # truncate the prior, so the counts belong in the batch record.
+      total_species <- function() {
+        r <- mean(mu) / mean(lambda)
+        if (r >= 1) return(Inf)
+        N_EXTANT / (1 - r)
+      }
+      repeat {
+        if (sbc && mu[1] > lambda[1]) {
+          sim_declining <<- sim_declining + 1
+        } else if (!(sbc && is.finite(MAX_LINEAGES) && total_species() > MAX_LINEAGES)) {
+          break
         }
-        while (total_species() > MAX_LINEAGES) {
-          sim_filtered <<- sim_filtered + 1
-          redraw()
-        }
+        sim_filtered <<- sim_filtered + 1
+        redraw()
       }
 
-      bw <- backward_sim(N_EXTANT, lambda, mu, psi, cov_breaks, bins, alpha = th$alpha,
+      bw <- backward_sim(N_EXTANT, lambda, mu, psi, cov_breaks, alpha = th$alpha,
                          lambda_a = if (ANAGENESIS) th$lambda_a else 0)
       sim <- bw$SIM
       fossils <- bw$FOSSILS
@@ -1110,10 +1122,10 @@ if (!exists("sim_functions_only")) {
               row.names = FALSE, col.names = first == 1, quote = FALSE, sep = "\t")
 
   # what the draws actually used, for simfbdr to check against the config
-  keys <- c("NINTERVALS", "INTERVAL_WIDTH", "AGE_MIN", "AGE_MAX", "BIN_WIDTH", "BIN_MAX", "NREPS",
+  keys <- c("NINTERVALS", "INTERVAL_WIDTH", "AGE_MIN", "AGE_MAX", "BIN_WIDTH", "NREPS",
             "GAMMA_L_SHAPE", "GAMMA_L_RATE", "GAMMA_M_SHAPE", "GAMMA_M_RATE",
             "GAMMA_P_SHAPE", "GAMMA_P_RATE", "GAMMA_RATE_MAX")
-  vals <- c(NINTERVALS, INTERVAL_WIDTH, AGE_MIN, AGE_MAX, BIN_WIDTH, BIN_MAX, reps,
+  vals <- c(NINTERVALS, INTERVAL_WIDTH, AGE_MIN, AGE_MAX, BIN_WIDTH, reps,
             GAMMA_L_SHAPE, GAMMA_L_RATE, GAMMA_M_SHAPE, GAMMA_M_RATE,
             GAMMA_P_SHAPE, GAMMA_P_RATE, GAMMA_RATE_MAX)
   if (MIX_K > 1) {
@@ -1133,9 +1145,10 @@ if (!exists("sim_functions_only")) {
     cat(sprintf("draws refused for going over SIM_MAX_DRAWS: %d (the largest that finished used %d of %d)\n",
                 sim_over, sim_draws_most, SIM_MAX_DRAWS))
   }
-  if (is.finite(MAX_LINEAGES)) {
+  if (BACKWARD) cat(sprintf("draws refused for an oldest interval that declines: %d\n", sim_declining))
+  if (is.finite(MAX_LINEAGES) || BACKWARD) {
     tot <- sim_drawn + reps - first + 1
-    cat(sprintf("draws refused by the expected-clade filter: %d of %d (%.2f%%)\n",
+    cat(sprintf("draws refused by the prior filters: %d of %d (%.2f%%)\n",
                 sim_filtered, tot, 100 * sim_filtered / max(tot, 1)))
     # the batch's count is over every replicate it holds, not only the ones just added
     filter_file <- paste0(reps_dir, "filtered.tsv")

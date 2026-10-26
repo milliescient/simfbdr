@@ -114,7 +114,7 @@ rate_prior:
   mu: {shape: 1.1}
   psi: {shape: 1.5, rate: 1.1}
 record:
-  occurrence_bins: {width: 3, oldest_edge: 30}
+  occurrence_bins: {width: 3}
 simulation_limits:
   max_expected_lineages: 250
 ```
@@ -284,15 +284,21 @@ only in how finely the fossils are dated are paired on the same fossils:
 record:
   occurrence_bins:
     width: 1.5
-    oldest_edge: 36
     also_widths: [0, 0.75, 3, 6]     # 0 is the exact ages
     also_offsets: [0, 0.25]          # fractions of a bin
 ```
 
 Each width at each offset is written as `occurrences_<model>_w<width>`, with `_o<offset>` when
-the offset is not 0, and a run reads one with `occurrences: complete_w3_o0.25`. These grids
-stop at the present and at `origin_age.max`, so an offset grid has no bin past the origin
-prior. The batch's own grid is written as it always was.
+the offset is not 0, and a run reads one with `occurrences: complete_w3_o0.25`. Every grid has an
+edge at each multiple of its width, as far back as a tree reaches, so only the width is stated.
+A bin straddling `origin_age.max` stops there, so an offset grid has no bin reaching past the
+origin prior. The batch's own grid is written as it always was.
+
+A tree drawn backward from `tree.extant_species` has an origin the prior does not bound, so its
+oldest bins can lie wholly above `origin_age.max`. Such a draw is refused when its oldest rate
+interval declines (mu > lambda), since that interval has no lower age and the tree may never find
+a root. The refusal is a function of the rates alone and truncates the prior, so it is counted
+with the other prior filters.
 
 How an analysis treats the ages it reads is the run's choice, `inference.occurrence_ages`:
 `reported` hands rb the bins, `midpoint` puts each occurrence at its bin's middle, and `drawn`
