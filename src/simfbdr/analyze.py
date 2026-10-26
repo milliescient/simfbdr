@@ -23,9 +23,11 @@ TEMPLATES = {"fbdrp": "infer-fbdrp.Rev",      # dnFBDRP: accounts for unsampled 
              "fbdsp": "infer-fbdsp.Rev"}     # dnFBDSP: the range process on a sampled budding tree
 
 # what a template is handed for a setting the batch left out
-UNSET = {"PRESENT": "0", "GAMMA_L_RATE": "-1", "GAMMA_M_RATE": "-1",
+UNSET = {"PRESENT": "0", "GAMMA_L_RATE": "-1", "GAMMA_M_RATE": "-1", "GAMMA_M_SHAPE": "-1",
+         "TURN_A": "0", "TURN_B": "0", "TURN_LMEAN": "0", "TURN_LSD": "0",
          "GAMMA_RATE_MAX": "20"}
 PRIORS = ["GAMMA_L_SHAPE", "GAMMA_L_RATE", "GAMMA_M_SHAPE", "GAMMA_M_RATE", "GAMMA_P_SHAPE",
+          "TURN_A", "TURN_B", "TURN_LMEAN", "TURN_LSD",
           "GAMMA_P_RATE", "GAMMA_RATE_MAX", "AGE_MIN", "AGE_MAX", "PRESENT"]
 
 
@@ -231,6 +233,9 @@ def analyze(run, force=False, jobs=1, slots=None, slot_dir=None):
                 f'BATCHDIR <- "{absolute(batch)}"', f'OCCURRENCES <- "{occurrences}"',
                 f'OUTDIR <- "{absolute(to)}"']
         head += [f"{k} <- {v[k]}" for k in PRIORS]
+        # which extinction prior the batch drew from: its own gammas, or a turnover shared by all
+        turnover = "beta" if b.get("TURN_A") else "lognormal" if b.get("TURN_LMEAN") else "none"
+        head += [f'TURNOVER <- "{turnover}"']
         # the coexistence factor belongs to the published model, so a config that leaves it
         # out gets the process's own default: dnFBDRP weights each birth, dnBDS does not
         coex = r.get("COEXISTENCE") or ("false" if r["MODEL"] == "bds" else "true")

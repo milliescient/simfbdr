@@ -26,9 +26,16 @@ rate_prior:                        # PyRate's: an independent gamma draw for eac
     shape:                         # required. PyRate's -pL is 1.1
     rate:                          # unset, it is drawn per replicate from Uniform(0, rate_parameter_max) and
                                    # estimated, which is what PyRate does when the shift times are fixed
-  mu:                              # the extinction rate
-    shape:                         # required. PyRate's -pM is 1.1
+  mu:                              # the extinction rate. Set it, or turnover below, not both
+    shape:                         # PyRate's -pM is 1.1
     rate:
+  turnover:                        # set instead of mu: one turnover shared by every interval, so that
+    beta:                          # mu = turnover * lambda in each. Beta keeps it below 1, so no
+      alpha:                       # interval declines; LogNormal lets it exceed 1, so a clade can
+      beta:                        # decline, which only a forward tree survives. Set one of the two
+    lognormal:
+      log_mean:
+      log_sd:
   psi:                             # the fossil sampling rate
     shape:                         # required. PyRate's -pP is 1.5
     rate:                          # required. PyRate's is 1.1

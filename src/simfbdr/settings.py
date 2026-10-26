@@ -18,8 +18,15 @@ BATCH_SETTINGS = [
      "the speciation rate. PyRate's prior: an independent gamma draw per interval"),
     ("GAMMA_L_RATE", "rate_prior.lambda.rate",
      "left out, it is drawn per replicate from Uniform(0, rate_parameter_max) and estimated"),
-    ("GAMMA_M_SHAPE", "rate_prior.mu.shape", "the extinction rate"),
+    ("GAMMA_M_SHAPE", "rate_prior.mu.shape", "the extinction rate, unless turnover is set"),
     ("GAMMA_M_RATE", "rate_prior.mu.rate", ""),
+    ("TURN_A", "rate_prior.turnover.beta.alpha",
+     "set instead of mu: one turnover for every interval, mu = turnover * lambda, "
+     "turnover ~ Beta(alpha, beta), always below 1"),
+    ("TURN_B", "rate_prior.turnover.beta.beta", ""),
+    ("TURN_LMEAN", "rate_prior.turnover.lognormal.log_mean",
+     "or turnover ~ LogNormal(log_mean, log_sd), which can exceed 1, so a clade can decline"),
+    ("TURN_LSD", "rate_prior.turnover.lognormal.log_sd", ""),
     ("GAMMA_P_SHAPE", "rate_prior.psi.shape", "the fossil sampling rate"),
     ("GAMMA_P_RATE", "rate_prior.psi.rate", "fixed; PyRate's is 1.1"),
     ("GAMMA_RATE_MAX", "rate_prior.rate_parameter_max",
@@ -121,7 +128,7 @@ RUN_RECORD = {
 
 
 # what a batch cannot be simulated without, and a run cannot be analyzed without
-BATCH_REQUIRED = ["NINTERVALS", "INTERVAL_WIDTH", "GAMMA_L_SHAPE", "GAMMA_M_SHAPE", "GAMMA_P_SHAPE",
+BATCH_REQUIRED = ["NINTERVALS", "INTERVAL_WIDTH", "GAMMA_L_SHAPE", "GAMMA_P_SHAPE",
                   "GAMMA_P_RATE", "AGE_MIN", "AGE_MAX", "BIN_WIDTH"]
 RUN_REQUIRED = ["MODEL", "REPORTING", "INFER", "COND", "RHO", "GENS", "PRINTGEN"]
 # The value a setting takes when a config leaves it out is in defaults/batch.yml and

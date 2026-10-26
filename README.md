@@ -244,6 +244,24 @@ the record and does not bias the ranks.
 A run that matches them validates the model. A run that does not is a misspecification
 analysis.
 
+## Turnover
+
+A batch can state extinction as one turnover shared by every rate interval instead of its own
+gamma, so that mu = turnover * lambda in each:
+
+```yaml
+rate_prior:
+  lambda: {shape: 1.1, rate: 4.4}
+  turnover:
+    beta: {alpha: 90, beta: 10}          # always below 1: no interval declines
+    # lognormal: {log_mean: 0.1, log_sd: 0.2}   # can exceed 1: clades may decline
+```
+
+Beta keeps every interval growing, so a tree drawn backward from `tree.extant_species` is never
+refused for a declining oldest interval; with lambda and mu drawn independently about half the
+draws can be. LogNormal lets a clade decline, which a forward tree from a drawn origin survives
+often enough to be kept. turnover is a truth and is estimated; mu is then a deterministic node.
+
 ## Sampling heterogeneity
 
 A batch with `psi_mixture.components: K` gives each species a relative sampling rate drawn at its

@@ -128,7 +128,19 @@ INTERVAL_WIDTH <- cfg("INTERVAL_WIDTH")
 # PyRate's rate prior: an independent gamma draw per interval. A speciation or extinction
 # rate parameter left unset is PyRate's hyperprior, drawn per replicate and estimated.
 GAMMA_L_SHAPE <- cfg("GAMMA_L_SHAPE"); GAMMA_L_RATE <- cfg_opt("GAMMA_L_RATE", NA)
-GAMMA_M_SHAPE <- cfg("GAMMA_M_SHAPE"); GAMMA_M_RATE <- cfg_opt("GAMMA_M_RATE", NA)
+GAMMA_M_SHAPE <- cfg_opt("GAMMA_M_SHAPE", NA); GAMMA_M_RATE <- cfg_opt("GAMMA_M_RATE", NA)
+# Or one turnover shared by every interval, mu = turnover * lambda: Beta keeps it below 1, LogNormal
+# lets a clade decline. Exactly one of mu's gamma and a turnover prior is stated.
+TURN_A <- cfg_opt("TURN_A", NA); TURN_B <- cfg_opt("TURN_B", NA)
+TURN_LMEAN <- cfg_opt("TURN_LMEAN", NA); TURN_LSD <- cfg_opt("TURN_LSD", NA)
+TURNOVER <- if (!is.na(TURN_A) || !is.na(TURN_B)) "beta" else
+            if (!is.na(TURN_LMEAN) || !is.na(TURN_LSD)) "lognormal" else "none"
+if (TURNOVER == "beta" && (is.na(TURN_A) || is.na(TURN_B) || !is.na(TURN_LMEAN) || !is.na(TURN_LSD)))
+  stop("rate_prior.turnover.beta needs alpha and beta, and no lognormal beside it")
+if (TURNOVER == "lognormal" && (is.na(TURN_LMEAN) || is.na(TURN_LSD)))
+  stop("rate_prior.turnover.lognormal needs log_mean and log_sd")
+if ((TURNOVER == "none") == is.na(GAMMA_M_SHAPE))
+  stop("state the extinction prior as rate_prior.mu or as rate_prior.turnover, one of the two")
 GAMMA_P_SHAPE <- cfg("GAMMA_P_SHAPE"); GAMMA_P_RATE <- cfg("GAMMA_P_RATE")
 GAMMA_RATE_MAX <- cfg_opt("GAMMA_RATE_MAX", 20)
 AGE_MIN <- cfg("AGE_MIN"); AGE_MAX <- cfg("AGE_MAX")
@@ -253,7 +265,8 @@ truth_of <- function(th, lambda, mu, psi, age) {
          setNames(rev(psi),    paste0("psi", seq_len(K))))
   v <- c(v, age = age)
   if (is.na(GAMMA_L_RATE)) v <- c(v, gamma_rate_lambda = th$gamma_rate_lambda)
-  if (is.na(GAMMA_M_RATE)) v <- c(v, gamma_rate_mu = th$gamma_rate_mu)
+  if (TURNOVER == "none" && is.na(GAMMA_M_RATE)) v <- c(v, gamma_rate_mu = th$gamma_rate_mu)
+  if (TURNOVER != "none") v <- c(v, turnover = th$turnover)
   if (MIX_K > 1) v <- c(v, alpha = th$alpha)
   if (N_CHARS > 0) v <- c(v, epsilon = th$epsilon)
   if (ANAGENESIS) v <- c(v, lambda_a = th$lambda_a)
@@ -264,12 +277,24 @@ truth_of <- function(th, lambda, mu, psi, age) {
 # this, so they cannot diverge.
 draw_theta <- function() {
   b_lambda <- if (is.na(GAMMA_L_RATE)) runif(1, 0, GAMMA_RATE_MAX) else GAMMA_L_RATE
-  b_mu     <- if (is.na(GAMMA_M_RATE)) runif(1, 0, GAMMA_RATE_MAX) else GAMMA_M_RATE
-  th <- list(age    = runif(1, AGE_MIN, AGE_MAX),
-             lambda = rgamma(NINTERVALS, GAMMA_L_SHAPE, rate = b_lambda),
-             mu     = rgamma(NINTERVALS, GAMMA_M_SHAPE, rate = b_mu),
-             psi    = rgamma(NINTERVALS, GAMMA_P_SHAPE, rate = GAMMA_P_RATE),
-             gamma_rate_lambda = b_lambda, gamma_rate_mu = b_mu)
+  if (TURNOVER == "none") {
+    b_mu <- if (is.na(GAMMA_M_RATE)) runif(1, 0, GAMMA_RATE_MAX) else GAMMA_M_RATE
+    th <- list(age    = runif(1, AGE_MIN, AGE_MAX),
+               lambda = rgamma(NINTERVALS, GAMMA_L_SHAPE, rate = b_lambda),
+               mu     = rgamma(NINTERVALS, GAMMA_M_SHAPE, rate = b_mu),
+               psi    = rgamma(NINTERVALS, GAMMA_P_SHAPE, rate = GAMMA_P_RATE),
+               gamma_rate_lambda = b_lambda, gamma_rate_mu = b_mu)
+  } else {
+    # the turnover takes mu's place in the stream, so a batch without one draws as it always did
+    age <- runif(1, AGE_MIN, AGE_MAX)
+    lambda <- rgamma(NINTERVALS, GAMMA_L_SHAPE, rate = b_lambda)
+    turnover <- if (TURNOVER == "beta") rbeta(1, TURN_A, TURN_B) else rlnorm(1, TURN_LMEAN, TURN_LSD)
+    th <- list(age    = age,
+               lambda = lambda,
+               mu     = turnover * lambda,
+               psi    = rgamma(NINTERVALS, GAMMA_P_SHAPE, rate = GAMMA_P_RATE),
+               gamma_rate_lambda = b_lambda, turnover = turnover)
+  }
   # drawn last, and only when asked for, so the draws before them are what they always were
   if (MIX_K > 1) th$alpha <- rexp(1, MIX_ALPHA_RATE)
   if (N_CHARS > 0) th$epsilon <- rbeta(1, EPS_A, EPS_B)
@@ -1124,9 +1149,11 @@ if (!exists("sim_functions_only")) {
   # what the draws actually used, for simfbdr to check against the config
   keys <- c("NINTERVALS", "INTERVAL_WIDTH", "AGE_MIN", "AGE_MAX", "BIN_WIDTH", "NREPS",
             "GAMMA_L_SHAPE", "GAMMA_L_RATE", "GAMMA_M_SHAPE", "GAMMA_M_RATE",
+            "TURN_A", "TURN_B", "TURN_LMEAN", "TURN_LSD",
             "GAMMA_P_SHAPE", "GAMMA_P_RATE", "GAMMA_RATE_MAX")
   vals <- c(NINTERVALS, INTERVAL_WIDTH, AGE_MIN, AGE_MAX, BIN_WIDTH, reps,
             GAMMA_L_SHAPE, GAMMA_L_RATE, GAMMA_M_SHAPE, GAMMA_M_RATE,
+            TURN_A, TURN_B, TURN_LMEAN, TURN_LSD,
             GAMMA_P_SHAPE, GAMMA_P_RATE, GAMMA_RATE_MAX)
   if (MIX_K > 1) {
     keys <- c(keys, "MIX_K", "MIX_ALPHA_RATE"); vals <- c(vals, MIX_K, MIX_ALPHA_RATE)

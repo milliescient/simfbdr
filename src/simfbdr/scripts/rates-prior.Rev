@@ -11,7 +11,17 @@ if (GAMMA_L_RATE > 0) {
     gamma_rate_lambda ~ dnUniform(0, GAMMA_RATE_MAX)
     moves.append( mvScale(gamma_rate_lambda, lambda=0.5, weight=2) )
 }
-if (GAMMA_M_RATE > 0) {
+# Extinction is either its own gamma per interval or one turnover shared by every interval, mu =
+# turnover * lambda, as the batch drew it
+if (TURNOVER != "none") {
+    if (TURNOVER == "beta") {
+        turnover ~ dnBeta(TURN_A, TURN_B)
+    } else {
+        turnover ~ dnLognormal(TURN_LMEAN, TURN_LSD)
+    }
+    moves.append( mvScale(turnover, lambda=0.1, weight=3) )
+    moves.append( mvScale(turnover, lambda=0.5, weight=1) )
+} else if (GAMMA_M_RATE > 0) {
     gamma_rate_mu <- GAMMA_M_RATE
 } else {
     gamma_rate_mu ~ dnUniform(0, GAMMA_RATE_MAX)
@@ -23,16 +33,24 @@ if (SKYLINE) {
     for (i in 1:n_int) {
         lambda[i] ~ dnGamma(GAMMA_L_SHAPE, gamma_rate_lambda)
         moves.append( mvSlice(lambda[i], window=0.1, weight=1, search_method="stepping_out") )
-        mu[i] ~ dnGamma(GAMMA_M_SHAPE, gamma_rate_mu)
-        moves.append( mvSlice(mu[i], window=0.1, weight=1, search_method="stepping_out") )
+        if (TURNOVER != "none") {
+            mu[i] := turnover * lambda[i]
+        } else {
+            mu[i] ~ dnGamma(GAMMA_M_SHAPE, gamma_rate_mu)
+            moves.append( mvSlice(mu[i], window=0.1, weight=1, search_method="stepping_out") )
+        }
         psi[i] ~ dnGamma(GAMMA_P_SHAPE, GAMMA_P_RATE)
         moves.append( mvSlice(psi[i], window=0.1, weight=1, search_method="stepping_out") )
     }
 } else {
     lambda ~ dnGamma(GAMMA_L_SHAPE, gamma_rate_lambda)
-    mu ~ dnGamma(GAMMA_M_SHAPE, gamma_rate_mu)
+    if (TURNOVER != "none") {
+        mu := turnover * lambda
+    } else {
+        mu ~ dnGamma(GAMMA_M_SHAPE, gamma_rate_mu)
+    }
     psi ~ dnGamma(GAMMA_P_SHAPE, GAMMA_P_RATE)
     moves.append( mvScale(lambda, weight=3) )
-    moves.append( mvScale(mu, weight=3) )
+    if (TURNOVER == "none") moves.append( mvScale(mu, weight=3) )
     moves.append( mvScale(psi, weight=3) )
 }
