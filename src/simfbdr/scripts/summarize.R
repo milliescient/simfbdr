@@ -188,8 +188,8 @@ latent_stats <- function(mf, ids) {
     log <- file.path(mf$run_dir, "output", sprintf("rep_%d.log", rep))
     if (!all(file.exists(spec, rng, log))) next
 
-    # RevBayes orders taxa by character name, so t10 precedes t2
-    taxa <- sort(unique(as.character(read.table(spec, header = TRUE)$taxon)))
+    # RevBayes orders taxa by byte order of name (t10 precedes t2); radix sorts in the C locale
+    taxa <- sort(unique(as.character(read.table(spec, header = TRUE)$taxon)), method = "radix")
     ranges <- read.table(rng, header = TRUE)
     s <- sims[[rep]]
     n_taxa <- length(taxa)
