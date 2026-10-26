@@ -8,7 +8,7 @@
 ### that generated the data and the analysis of it read one definition, so they
 ### cannot drift apart.
 ###
-### Set before sourcing: rep, SKYLINE, COMPLETE, COND, RHO, COEXISTENCE, RANGE_START,
+### Set before sourcing: rep, SKYLINE, REPORTING, COND, RHO, COEXISTENCE, RANGE_START,
 ###   GENS, PRINTGEN,
 ###   OCCURRENCES, BATCHDIR, OUTDIR, the GAMMA_ settings, AGE_MIN, AGE_MAX,
 ###   ORIGIN_PRIOR, MAXFA
@@ -79,13 +79,8 @@ if (ORIGIN_PRIOR == "none") {
     }
 }
 
-# the reporting model is its own node now, clamped to the observed record, and it names the
-# rule rather than flagging it
-if (COMPLETE) {
-    rec ~ dnFossilRecord(ranges=bd, reporting="complete")
-} else {
-    rec ~ dnFossilRecord(ranges=bd, reporting="firstlast")
-}
+# the reporting model is its own node, clamped to the observed record
+rec ~ dnFossilRecord(ranges=bd, reporting=REPORTING)
 rec.clamp(taxa)
 
 moves.append( mvMatrixElementScale(bd, lambda=0.01, weight=taxa.size()/10) )
@@ -102,6 +97,12 @@ moves.append( mvMatrixElementSwap(bd, col=4, weight=taxa.size()/5) )
 # continuous element moves cannot reach
 if (RHO < 1.0) {
     moves.append( mvExtinctionRJSwitch(bd, weight=taxa.size()/5) )
+}
+
+# under presence a taxon reported once over an interval may hold more than one occurrence, so
+# whether its first and last appearances are one age is sampled too
+if (REPORTING == "presence") {
+    moves.append( mvSingletonRJSwitch(bd, weight=taxa.size()/5) )
 }
 
 org  := bd.getOrigin()

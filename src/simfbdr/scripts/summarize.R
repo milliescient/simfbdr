@@ -144,6 +144,10 @@ rate_stats <- function(mf, ids, logs) {
   for (h in c("gamma_rate_lambda", "gamma_rate_mu")) {
     if (h %in% names(probe)) rates <- c(rates, h)
   }
+  # so are the psi mixture's shape and the characters' chance to change, when the run estimated them
+  for (h in c("alpha", "epsilon")) {
+    if (h %in% names(probe)) rates <- c(rates, h)
+  }
 
   draws <- Map(function(f) {
     d <- read.table(f, header = TRUE)

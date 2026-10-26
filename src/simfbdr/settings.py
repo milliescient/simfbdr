@@ -45,6 +45,19 @@ BATCH_SETTINGS = [
      "set, trees are drawn backward from exactly this many extant species and the origin is an "
      "output rather than a draw"),
 
+    ("MIX_K", "psi_mixture.components",
+     "each species draws one of this many relative sampling rates at its birth, a discretized "
+     "gamma of shape alpha with equal weights; unset or 1, every species samples at psi"),
+    ("MIX_ALPHA_RATE", "psi_mixture.alpha_prior_rate",
+     "alpha ~ Exponential(this rate), drawn per replicate"),
+    ("N_CHARS", "characters.count",
+     "morphological characters that change only at speciation; unset, none are simulated"),
+    ("CHAR_STATES", "characters.states",
+     "states of each character, one number for all or a list with one per character"),
+    ("EPS_A", "characters.epsilon_prior.alpha",
+     "epsilon ~ Beta(alpha, beta), drawn per replicate: each character's chance to change at a speciation"),
+    ("EPS_B", "characters.epsilon_prior.beta", ""),
+
     ("MAX_LINEAGES", "simulation_limits.max_expected_lineages",
      "a draw expected to bear more lineages than this is refused unsimulated, which truncates the prior"),
     ("SIM_MAX_DRAWS", "simulation_limits.max_waiting_time_draws",
@@ -52,10 +65,16 @@ BATCH_SETTINGS = [
 ]
 
 RUN_SETTINGS = [
-    ("MODEL", "inference.model", "fbdrp: dnFBDRP; bds: dnBDS"),
+    ("MODEL", "inference.model", "fbdrp: dnFBDRP; bds: dnBDS; fbdsp: dnFBDSP, the tree process"),
     ("REPORTING", "inference.occurrences", "the batch's occurrences_<this> directory"),
     ("INFER", "inference.reporting_model",
-     "complete: every occurrence is reported; firstlast: each taxon's oldest and youngest"),
+     "complete: every occurrence is reported; firstlast: each taxon's oldest and youngest; "
+     "presence: each reported interval holds at least its count"),
+    ("PSI_MIX", "inference.psi_mixture",
+     "assume the batch's psi mixture, estimating alpha and each species' component; false "
+     "analyzes the same data under a single psi"),
+    ("CHARS", "inference.characters",
+     "analyze the batch's characters under dnPhyloMorphospeciation, estimating epsilon; fbdsp only"),
     ("AGES", "inference.occurrence_ages",
      "reported: the bins as they are; midpoint: each at its bin's middle; drawn: each uniform in its bin"),
     ("AGE_DRAWS", "inference.age_draws",
@@ -102,7 +121,9 @@ RUN_REQUIRED = ["MODEL", "REPORTING", "INFER", "COND", "RHO", "GENS", "PRINTGEN"
 # defaults/run.yml, not here.
 
 # a setting that takes one of a few words
-CHOICES = {"RANGE_START": ("origination", "divergence"), "MODEL": ("fbdrp", "bds"), "INFER": ("complete", "firstlast"),
+CHOICES = {"RANGE_START": ("origination", "divergence"), "MODEL": ("fbdrp", "bds", "fbdsp"),
+           "INFER": ("complete", "firstlast", "presence"),
+           "PSI_MIX": ("true", "false"), "CHARS": ("true", "false"),
            "COND": ("time", "sampling", "survival", "nTaxa"),
            "TAXA_COUNT": ("fossil", "record"),
            "ORIGIN_PRIOR": ("uniform", "exponential", "none"),

@@ -204,6 +204,31 @@ MIN_FOSSIL_TAXA <- as.integer(cfg_opt("MIN_FOSSIL_TAXA", 0))
 N_EXTANT <- suppressWarnings(as.integer(cfg_opt("N_EXTANT", NA)))
 BACKWARD <- !is.na(N_EXTANT)
 
+# A psi mixture: each species draws one of MIX_K relative sampling rates at its birth,
+# independently of its parent, from a discretized gamma of shape alpha with equal weights. Unset
+# or 1 is none, and then no extra random number is drawn, so such a batch reproduces exactly.
+MIX_K <- as.integer(cfg_opt("MIX_K", 1))
+MIX_ALPHA_RATE <- cfg_opt("MIX_ALPHA_RATE", 1)
+if (MIX_K < 1) stop("psi_mixture.components must be at least 1")
+
+# Characters that change only at speciation, each of a new species' changing with probability
+# epsilon to a uniformly drawn other state. Unset is none, again with no extra draws.
+N_CHARS <- as.integer(cfg_opt("N_CHARS", 0))
+CHAR_STATES <- cfg_list("CHAR_STATES")
+if (N_CHARS > 0) {
+  if (!length(CHAR_STATES)) CHAR_STATES <- 2
+  if (length(CHAR_STATES) == 1) CHAR_STATES <- rep(CHAR_STATES, N_CHARS)
+  if (length(CHAR_STATES) != N_CHARS || any(CHAR_STATES < 2) || any(CHAR_STATES > 10))
+    stop("characters.states must be one number or one per character, each from 2 to 10")
+}
+EPS_A <- cfg_opt("EPS_A", 1); EPS_B <- cfg_opt("EPS_B", 9)
+
+# RevBayes's fnDiscretizeGamma(alpha, alpha, K): each category's mean, so the rates average one
+discretized_gamma <- function(alpha, K) {
+  q <- c(0, qgamma(seq_len(K - 1) / K, alpha, rate = alpha), Inf)
+  K * diff(pgamma(q, alpha + 1, rate = alpha))
+}
+
 # Rate breakpoints (before the present) and fossil bins. Both are fixed rather than
 # derived from age: the analysis estimates the origin, so anything it reads that
 # scales with age hands it the answer. paleobuddy counts shift times forward from
@@ -221,6 +246,8 @@ truth_of <- function(th, lambda, mu, psi, age) {
   v <- c(v, age = age)
   if (is.na(GAMMA_L_RATE)) v <- c(v, gamma_rate_lambda = th$gamma_rate_lambda)
   if (is.na(GAMMA_M_RATE)) v <- c(v, gamma_rate_mu = th$gamma_rate_mu)
+  if (MIX_K > 1) v <- c(v, alpha = th$alpha)
+  if (N_CHARS > 0) v <- c(v, epsilon = th$epsilon)
   v
 }
 
@@ -229,11 +256,38 @@ truth_of <- function(th, lambda, mu, psi, age) {
 draw_theta <- function() {
   b_lambda <- if (is.na(GAMMA_L_RATE)) runif(1, 0, GAMMA_RATE_MAX) else GAMMA_L_RATE
   b_mu     <- if (is.na(GAMMA_M_RATE)) runif(1, 0, GAMMA_RATE_MAX) else GAMMA_M_RATE
-  list(age    = runif(1, AGE_MIN, AGE_MAX),
-       lambda = rgamma(NINTERVALS, GAMMA_L_SHAPE, rate = b_lambda),
-       mu     = rgamma(NINTERVALS, GAMMA_M_SHAPE, rate = b_mu),
-       psi    = rgamma(NINTERVALS, GAMMA_P_SHAPE, rate = GAMMA_P_RATE),
-       gamma_rate_lambda = b_lambda, gamma_rate_mu = b_mu)
+  th <- list(age    = runif(1, AGE_MIN, AGE_MAX),
+             lambda = rgamma(NINTERVALS, GAMMA_L_SHAPE, rate = b_lambda),
+             mu     = rgamma(NINTERVALS, GAMMA_M_SHAPE, rate = b_mu),
+             psi    = rgamma(NINTERVALS, GAMMA_P_SHAPE, rate = GAMMA_P_RATE),
+             gamma_rate_lambda = b_lambda, gamma_rate_mu = b_mu)
+  # drawn last, and only when asked for, so the draws before them are what they always were
+  if (MIX_K > 1) th$alpha <- rexp(1, MIX_ALPHA_RATE)
+  if (N_CHARS > 0) th$epsilon <- rbeta(1, EPS_A, EPS_B)
+  th
+}
+
+# Each species' component, drawn at its birth and independent of its parent's. NULL without a
+# mixture, which draws nothing.
+draw_components <- function(n) if (MIX_K > 1) sample.int(MIX_K, n, replace = TRUE) else NULL
+
+# Character states of every species, sampled or not, down the true tree. A species keeps its
+# parent's states except that each changes with probability epsilon, to a uniformly drawn other
+# state; the first species' states are uniform. A parent's index is always below its daughter's.
+draw_characters <- function(par, epsilon) {
+  n <- length(par)
+  x <- matrix(0L, n, N_CHARS)
+  for (i in seq_len(n)) {
+    if (is.na(par[i])) {
+      x[i, ] <- vapply(CHAR_STATES, function(k) sample.int(k, 1) - 1L, 0L)
+      next
+    }
+    x[i, ] <- x[par[i], ]
+    for (c in which(runif(N_CHARS) < epsilon)) {
+      x[i, c] <- (x[i, c] + sample.int(CHAR_STATES[c] - 1, 1)) %% CHAR_STATES[c]
+    }
+  }
+  x
 }
 
 # Expected lineages ever born, 1 + integral of lambda(t)E[N(t)]: E[N] grows as exp(lambda-mu)
@@ -299,7 +353,7 @@ bd_sim_bounded <- function(n0, lambda, mu, tMax, lShifts, mShifts, nFinal) {
 # output rather than a draw. FossilSim then assigns budding species identity to the complete
 # tree: beta = 0 is budding, lambda.a = 0 no anagenesis. Both packages index rates
 # youngest-first, and the pipeline carries them oldest-first, so both arguments reverse.
-backward_sim <- function(n_extant, lambda, mu, psi, breaks, bins) {
+backward_sim <- function(n_extant, lambda, mu, psi, breaks, bins, alpha = NULL) {
   tr <- TreeSim::sim.rateshift.taxa(n = n_extant, numbsim = 1,
                                     lambda = rev(lambda), mu = rev(mu),
                                     frac = rep(1, length(lambda)),
@@ -329,8 +383,21 @@ backward_sim <- function(n_extant, lambda, mu, psi, breaks, bins) {
   # the grid must be monotone and reach past the tree whichever is deeper, the oldest break or
   # the origin, or the last interval is malformed
   top <- max(max(TS), if (length(breaks)) max(breaks) else 0) + 1
-  fos <- FossilSim::sim.fossils.intervals(taxonomy = tx, rates = rev(psi),
-                                          interval.ages = c(0, breaks, top))
+  comp <- draw_components(length(TS))
+  if (is.null(comp)) {
+    fos <- FossilSim::sim.fossils.intervals(taxonomy = tx, rates = rev(psi),
+                                            interval.ages = c(0, breaks, top))
+  } else {
+    # each component's species sample at its own multiple of psi
+    r <- discretized_gamma(alpha, MIX_K)
+    fos <- do.call(rbind, lapply(seq_len(MIX_K), function(h) {
+      keep <- idx[tx$sp] %in% which(comp == h)
+      if (!any(keep)) return(NULL)
+      FossilSim::sim.fossils.intervals(taxonomy = tx[keep, ], rates = rev(psi) * r[h],
+                                       interval.ages = c(0, breaks, top))
+    }))
+  }
+
   # an occurrence cannot predate the tree it was sampled on, and a non-finite age would be
   # binned as the oldest edge with no upper one, which reads as NA downstream
   if ( nrow(fos) > 0 && ( any(!is.finite(fos$hmin)) || max(fos$hmin) > max(TS) + 1e-8 ) ) {
@@ -344,7 +411,7 @@ backward_sim <- function(n_extant, lambda, mu, psi, breaks, bins) {
   if (nrow(fos) == 0) {
     f <- setNames(data.frame(character(0), logical(0), numeric(0), numeric(0), numeric(0),
                              stringsAsFactors = FALSE), cols)
-    return(list(SIM = sim, FOSSILS = f, AGE = max(TS)))
+    return(list(SIM = sim, FOSSILS = f, AGE = max(TS), COMP = comp))
   }
   k <- idx[fos$sp]
   j <- findInterval(fos$hmin, bins)
@@ -352,12 +419,12 @@ backward_sim <- function(n_extant, lambda, mu, psi, breaks, bins) {
                   MaxT = bins[j + 1], MinT = bins[j], stringsAsFactors = FALSE)
   # retain_occs reads the first row as the oldest occurrence and the last as the youngest
   f <- f[order(k, -f$SampT), , drop = FALSE]
-  list(SIM = sim, FOSSILS = f, AGE = max(TS))
+  list(SIM = sim, FOSSILS = f, AGE = max(TS), COMP = comp)
 }
 
 # Reporting models, by the sim's model number. An SBC rep emits both from one
 # simulated record, so they share a tree, a fossil set and a timeline.
-sbc_models <- c(complete = 1, firstlast = 2)
+sbc_models <- c(complete = 1, firstlast = 2, presence = 3)
 
 # Which of a species' occurrences get reported, under each model.
 retain_occs <- function(occs, model) {
@@ -372,8 +439,15 @@ retain_occs <- function(occs, model) {
     if (nrow(occs) > 1) return(occs[c(1, nrow(occs)), ])
     return(occs[1, ])
   }
+
+  # presence (model 3): each occupied bin once. The bins are only known once the columns are
+  # named, so report_presence below does it.
   occs
 }
+
+# Each bin a taxon was sampled in, once. A bin left out then truly held nothing, which is what
+# reporting="presence" assumes. On a grid of exact ages every occurrence is its own bin.
+report_presence <- function(s) s[!duplicated(s[, c("taxon", "min_age", "max_age")]), , drop = FALSE]
 
 ###
 # write auxiliary simulation functions
@@ -459,9 +533,10 @@ simulate_rep <- function(rates, age, shifts,
         }
       }
 
-      bw <- backward_sim(N_EXTANT, lambda, mu, psi, cov_breaks, bins)
+      bw <- backward_sim(N_EXTANT, lambda, mu, psi, cov_breaks, bins, alpha = th$alpha)
       sim <- bw$SIM
       fossils <- bw$FOSSILS
+      comp <- bw$COMP
       # the origin is what the tree realized, and it is the truth written for it
       age <- bw$AGE
       tMax <- age
@@ -484,11 +559,22 @@ simulate_rep <- function(rates, age, shifts,
       next
     }
 
-    # run fossil sampling
-    fossils <- suppressMessages(sample.clade(sim, psi, tMax,
-                                             rShifts = if (length(psi) < 2) NULL else pShifts,
-                                             bins = bins,
-                                             returnAll = TRUE))
+    # run fossil sampling, each component's species at its own multiple of psi
+    sample_at <- function(rate, S = NULL)
+      suppressMessages(sample.clade(sim, rate, tMax, S = S,
+                                    rShifts = if (length(psi) < 2) NULL else pShifts,
+                                    bins = bins, returnAll = TRUE))
+    # kept beside sim, whose shape paleobuddy checks
+    comp <- draw_components(length(sim$TS))
+    if (is.null(comp)) {
+      fossils <- sample_at(psi)
+    } else {
+      r <- discretized_gamma(th$alpha, MIX_K)
+      fossils <- do.call(rbind, lapply(seq_len(MIX_K), function(h) {
+        S <- which(comp == h)
+        if (length(S)) sample_at(psi * r[h], S)
+      }))
+    }
     }
 
     # drop what the boundary hides, and recompute who is alive at it
@@ -547,6 +633,7 @@ simulate_rep <- function(rates, age, shifts,
 
       # change status column to extant and extinct
       specs[[m]]$status <- c("extinct", "extant")[specs[[m]]$status + 1]
+      if (names(specs)[m] == "presence") specs[[m]] <- report_presence(specs[[m]])
     }
 
     # An extant lineage is seen at the present with probability rho, and that observation is
@@ -612,13 +699,33 @@ simulate_rep <- function(rates, age, shifts,
     }
   }
 
+  # the characters of every species, drawn once the record is accepted so that a rejected
+  # draw costs none, then kept for the reported ones
+  chars <- NULL
+  if (sbc && N_CHARS > 0) {
+    x <- draw_characters(sim$PAR, th$epsilon)
+    k <- as.integer(sub("^t", "", unique(specs[[1]]$taxon)))
+    chars <- x[k, , drop = FALSE]
+    rownames(chars) <- paste0("t", k)
+  }
+
   # paleobuddy indexes intervals oldest-first because its shifts run forward from the origin.
   # Everything downstream indexes them youngest-first, so truth_of reverses, once.
   true_vals <- if (sbc) truth_of(th, lambda, mu, psi, age) else NULL
 
   # return sim, ranges and k
-  return(list(SIM = sim, SPECIMENS = specs, RANGES = ranges, 
-              TV = true_vals, BINS = bins))
+  return(list(SIM = sim, SPECIMENS = specs, RANGES = ranges,
+              TV = true_vals, BINS = bins, CHARS = chars, COMP = comp))
+}
+
+# A standard-data NEXUS matrix, one row per taxon
+write_nexus <- function(x, file) {
+  symbols <- paste(seq_len(max(CHAR_STATES)) - 1, collapse = "")
+  rows <- sprintf("  %s %s", rownames(x), apply(x, 1, paste, collapse = ""))
+  writeLines(c("#NEXUS", "BEGIN DATA;",
+               sprintf("  DIMENSIONS NTAX=%d NCHAR=%d;", nrow(x), ncol(x)),
+               sprintf('  FORMAT DATATYPE=STANDARD SYMBOLS="%s" MISSING=? GAP=-;', symbols),
+               "MATRIX", rows, ";", "END;"), file)
 }
 
 # simulate one set
@@ -771,12 +878,14 @@ simulate_set <- function(n_key, reps, rates, age, base_dir,
 
       # and the same rows on each other grid, as occurrences_<model>_w<width>[_o<offset>]
       if (sbc) for (g in seq_len(nrow(more_grids))) {
-        s <- specs[[m]]
+        # presence on another grid thins the whole record on that grid, not this one's survivors
+        s <- if (names(specs)[m] == "presence") specs[["complete"]] else specs[[m]]
         # a survivor seen at the present is a status, not an occurrence, and has no bin
         occ <- s$min_age != s$max_age
         cell <- rebin(s$age[occ], more_grids$w[g], more_grids$off[g])
         s$min_age[occ] <- cell$min
         s$max_age[occ] <- cell$max
+        if (names(specs)[m] == "presence") s <- report_presence(s)
         grid_dir <- paste0(spec_dir, "_", grid_label(more_grids$w[g], more_grids$off[g]))
         smart_dir_create(grid_dir)
         write.table(s[, 1:4], paste0(grid_dir, "/taxa_", rep, ".tsv"),
@@ -784,6 +893,21 @@ simulate_set <- function(n_key, reps, rates, age, base_dir,
       }
     }
     
+    # characters, as NEXUS for readDiscreteCharacterData
+    if (!is.null(sim_rep$CHARS)) {
+      smart_dir_create(paste0(base_dir, "/characters"))
+      write_nexus(sim_rep$CHARS, paste0(base_dir, "/characters/characters_", rep, ".nex"))
+    }
+
+    # a species' psi mixture component is a latent of the analysis, so it is a truth too
+    if (!is.null(sim_rep$COMP)) {
+      smart_dir_create(paste0(base_dir, "/true_components"))
+      k <- as.integer(sub("^t", "", ranges$taxon))
+      write.table(data.frame(taxon = ranges$taxon, component = sim_rep$COMP[k]),
+                  paste0(base_dir, "true_components/components_", rep, ".tsv"),
+                  col.names = TRUE, row.names = FALSE, quote = FALSE, sep = "\t")
+    }
+
     # save true ranges
     smart_dir_create(paste0(base_dir, "/true_ranges"))
     write.table(ranges, paste0(base_dir, "true_ranges/ranges_", rep, ".tsv"),
@@ -874,7 +998,7 @@ simulate_batch <- function(reps, reps_dir, first = 1) {
 # run simulations
 #
 # One pass reports each simulated record under every reporting model, so this fills
-# occurrences_{complete,firstlast}/ alongside the one shared timeline,
+# occurrences_{complete,firstlast,presence}/ alongside the one shared timeline,
 # true_vals.tsv, true_ranges/ and sim_list.RData.
 #
 # seeds.RData is reused when present, so reruns of a batch stay comparable.
@@ -911,6 +1035,12 @@ if (!exists("sim_functions_only")) {
   vals <- c(NINTERVALS, INTERVAL_WIDTH, AGE_MIN, AGE_MAX, BIN_WIDTH, BIN_MAX, reps,
             GAMMA_L_SHAPE, GAMMA_L_RATE, GAMMA_M_SHAPE, GAMMA_M_RATE,
             GAMMA_P_SHAPE, GAMMA_P_RATE, GAMMA_RATE_MAX)
+  if (MIX_K > 1) {
+    keys <- c(keys, "MIX_K", "MIX_ALPHA_RATE"); vals <- c(vals, MIX_K, MIX_ALPHA_RATE)
+  }
+  if (N_CHARS > 0) {
+    keys <- c(keys, "N_CHARS", "EPS_A", "EPS_B"); vals <- c(vals, N_CHARS, EPS_A, EPS_B)
+  }
   if (is.finite(MAX_LINEAGES)) {
     keys <- c(keys, "MAX_LINEAGES"); vals <- c(vals, MAX_LINEAGES)
   }

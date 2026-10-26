@@ -1,0 +1,103 @@
+### Skyline FBD-range inference over dnFBDSP, the range process on a sampled budding tree, with the
+### record on a dnFossilRecord node and, when the run asks for them, the characters on a
+### dnPhyloMorphospeciation node.
+###
+### Every prior hyperparameter arrives as a variable set by the per-rep aux file that simfbdr
+### writes from the batch's config.yml, as for infer-fbdrp.Rev.
+###
+### Set before sourcing: rep, SKYLINE, REPORTING, COND, RHO, RANGE_START, GENS, PRINTGEN,
+###   OCCURRENCES, BATCHDIR, OUTDIR, the GAMMA_ settings, AGE_MIN, AGE_MAX, ORIGIN_PRIOR, MAXFA,
+###   CHARS, and with CHARS: CHARFILE, NSTATES, EPS_A, EPS_B
+
+# TAXA is set when the run treats the occurrence ages some other way than as reported
+if (!exists("TAXA")) TAXA <- BATCHDIR + "/" + OCCURRENCES + "/taxa_" + rep + ".tsv"
+taxa <- readTaxonData(TAXA)
+
+moves = VectorMoves()
+
+# the rate prior and its guards live in one place, so the arms cannot drift
+source(BINDIR + "/rates-prior.Rev")
+
+# dnFBDSP needs an origin, so simfbdr refuses origin_prior none before this. AGE_MAX is above
+# every occurrence, so starting there is always feasible.
+if (ORIGIN_PRIOR == "exponential") {
+    origin ~ dnExponential(1/MAXFA, offset=MAXFA)
+} else {
+    origin ~ dnUniform(AGE_MIN, AGE_MAX)
+}
+origin.setValue(AGE_MAX)
+moves.append( mvSlide(origin, delta=0.5, weight=2) )
+moves.append( mvSlide(origin, delta=2.0, weight=2) )
+
+# pure budding: the simulator has no anagenesis, and lambda_a defaults to zero
+if (SKYLINE) {
+    tr ~ dnFBDSP(taxa=taxa, lambda=lambda, mu=mu, psi=psi, rho=RHO, present=PRESENT,
+                 timeline=timeline, condition=COND, origin=origin)
+} else {
+    tr ~ dnFBDSP(taxa=taxa, lambda=lambda, mu=mu, psi=psi, rho=RHO, present=PRESENT,
+                 condition=COND, origin=origin)
+}
+
+rec ~ dnFossilRecord(ranges=tr, reporting=REPORTING)
+rec.clamp(taxa)
+
+# every age in the tree needs a move: the tips are extinction times, the internal nodes births
+moves.append( mvFossilTipTimeUniform(tr, origin=origin, weight=taxa.size()/5) )
+if (taxa.size() > 1) {
+    moves.append( mvFNPR(tr, weight=taxa.size()/5) )
+    moves.append( mvNodeTimeSlideUniform(tr, weight=taxa.size()/5) )
+    moves.append( mvRootTimeSlideUniform(tr, origin=origin, weight=2) )
+    # which child continues its ancestor's species, which no other move relabels
+    moves.append( mvRotateNode(tr, weight=taxa.size()/5) )
+    # an exact draw of the topology given the ranges, valid under pure budding
+    moves.append( mvBuddingTopologyRedraw(tr, weight=2) )
+}
+# the first and last appearances, which the tree does not carry
+moves.append( mvStratigraphicRange(tr, weight=taxa.size()/5) )
+
+# rho < 1 puts a point mass at the present on every taxon reported extinct
+if (RHO < 1.0) {
+    moves.append( mvExtinctionRJSwitch(tr, weight=taxa.size()/5) )
+}
+# under presence a taxon reported once over an interval may hold more than one occurrence
+if (REPORTING == "presence") {
+    moves.append( mvSingletonRJSwitch(tr, weight=taxa.size()/5) )
+}
+
+# Characters that change only at speciation, each character independently with probability
+# epsilon, as the batch simulated them. The changed sets are summed over, so the only latents are
+# the hidden speciations on each branch.
+if (CHARS) {
+    morpho <- readDiscreteCharacterData(CHARFILE)
+    epsilon ~ dnBeta(EPS_A, EPS_B)
+    moves.append( mvSlide(epsilon, delta=0.05, weight=5) )
+    morph ~ dnPhyloMorphospeciation(tree=tr, nStates=NSTATES, epsilon=epsilon)
+    morph.clamp(morpho)
+    moves.append( mvMorphospeciationEvents(morph, weight=taxa.size()/5) )
+}
+
+org  := tr.getOrigin()
+# as for infer-fbdrp.Rev, a per-taxon latent is dropped by not creating it
+if (!exists("LATENTS")) LATENTS <- TRUE
+if (LATENTS) {
+    bb   := tr.getOriginationTimes()
+    dd   := tr.getExtinctionTimes()
+    tau1 := tr.getFirstAppearances()
+    tauK := tr.getLastAppearances()
+}
+
+mymodel = model(tr)
+monitors = VectorMonitors()
+if (LATENTS) {
+    monitors.append( mnModel(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN) )
+} else if (CHARS) {
+    monitors.append( mnFile(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN,
+                            lambda, mu, psi, org, epsilon) )
+} else {
+    monitors.append( mnFile(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN,
+                            lambda, mu, psi, org) )
+}
+monitors.append( mnScreen(printgen=100000) )
+mymcmc = mcmc(mymodel, monitors, moves, moveschedule="single")
+mymcmc.run(generations=GENS)
+q()

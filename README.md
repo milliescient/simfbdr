@@ -59,8 +59,9 @@ the batch's hyperpriors and has no way to set them.
 a-batch/
   config.yml         the generating process and every hyperprior, written by you
   manifest.yml       the record of what was simulated from it, written by simfbdr
-  occurrences_complete/  occurrences_firstlast/
+  occurrences_complete/  occurrences_firstlast/  occurrences_presence/
   times/  true_ranges/  true_vals.tsv  sim_list.RData  seeds.RData
+  true_components/  characters/   with a psi mixture, with characters
   runs/fbdrp_firstlast/
     config.yml       which occurrences to read, and how to analyze them
     manifest.yml     + what it read and wrote, and which code and which rb ran
@@ -233,12 +234,37 @@ the record and does not bias the ranks.
 
 ## Occurrences and reporting model
 
-- `inference.occurrences` = `complete` | `firstlast`: which occurrences the analysis reads.
-  All come from the same simulated history.
-- `inference.reporting_model` = `complete` | `firstlast`: how the model treats them.
+- `inference.occurrences` = `complete` | `firstlast` | `presence`: which occurrences the
+  analysis reads. All come from the same simulated history. `presence` reports each bin a taxon
+  was sampled in once, so a bin left out truly held nothing.
+- `inference.reporting_model` = `complete` | `firstlast` | `presence`: how the model treats them.
+  Under `presence` a reported count is a lower bound, and `mvSingletonRJSwitch` samples whether
+  a taxon reported once has one appearance age or two.
 
 A run that matches them validates the model. A run that does not is a misspecification
 analysis.
+
+## Sampling heterogeneity
+
+A batch with `psi_mixture.components: K` gives each species a relative sampling rate drawn at its
+birth, independently of its parent: one of the K rates of a discretized gamma of shape alpha,
+with equal weights, so psi stays the mean rate. alpha ~ Exponential(`alpha_prior_rate`) is drawn
+per replicate and is a truth like the rates; each species' component is in
+`true_components/`. A run with `inference.psi_mixture: true` assumes the mixture and estimates
+alpha (dnFBDRP only); `false` analyzes the same data under a single psi.
+
+## Morphospeciation
+
+A batch with `characters.count` simulates characters that change only at speciation, down the
+complete tree: the first species' states are uniform, and at each budding every character of
+the new species changes with probability epsilon to a uniformly drawn other state. epsilon ~
+Beta(`epsilon_prior`) is drawn per replicate. The characters of every reported taxon are in
+`characters/characters_<rep>.nex`. A run with `inference.model: fbdsp` and
+`inference.characters: true` adds them under `dnPhyloMorphospeciation` on the dnFBDSP tree and
+estimates epsilon.
+
+A batch with neither draws no extra random number, so it is the same batch it was before
+either existed.
 
 ## Dating resolution
 
@@ -292,6 +318,7 @@ Monte Carlo error.
 
 ## Scope
 
-`inference.model` is `fbdrp` or `bds`. PyRate itself is not run. `bds` under
+`inference.model` is `fbdrp`, `bds` or `fbdsp`, the range process on a sampled budding tree.
+PyRate itself is not run. `bds` under
 `condition: sampling` is its likelihood, and the script that ran the program on a batch is on
 the `all-priors` branch.

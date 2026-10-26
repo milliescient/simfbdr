@@ -19,7 +19,8 @@ from . import config, manifest, tools
 from .batch import die, replicates, warn_if_dirty
 
 TEMPLATES = {"fbdrp": "infer-fbdrp.Rev",      # dnFBDRP: accounts for unsampled lineages
-             "bds": "infer-bds.Rev"}         # dnBDS: complete lineage sampling, PyRate's assumption
+             "bds": "infer-bds.Rev",         # dnBDS: complete lineage sampling, PyRate's assumption
+             "fbdsp": "infer-fbdsp.Rev"}     # dnFBDSP: the range process on a sampled budding tree
 
 # what a template is handed for a setting the batch left out
 UNSET = {"PRESENT": "0", "GAMMA_L_RATE": "-1", "GAMMA_M_RATE": "-1",
@@ -140,8 +141,22 @@ def analyze(run, force=False, jobs=1, slots=None, slot_dir=None):
     if r["MODEL"] == "bds" and r["RANGE_START"] == "divergence":
         die(f"{rcfg} asks for divergence times, which dnBDS does not offer: under complete "
             f"lineage sampling a birth is the species' own origination.")
+    mix_k = int(b.get("MIX_K") or 1)
+    if r["PSI_MIX"] == "true" and r["MODEL"] != "fbdrp":
+        die(f"{rcfg} asks for the psi mixture, which only dnFBDRP has.")
+    if r["PSI_MIX"] == "true" and mix_k < 2:
+        die(f"{rcfg} asks for the psi mixture, and {batch} was simulated without one: the "
+            f"analysis takes its components and alpha prior from the batch.")
+    if r["CHARS"] == "true" and r["MODEL"] != "fbdsp":
+        die(f"{rcfg} asks for the characters, which need the tree process: model fbdsp.")
+    if r["CHARS"] == "true" and not b.get("N_CHARS"):
+        die(f"{rcfg} asks for the characters, and {batch} simulated none.")
+    if r["MODEL"] == "fbdsp" and r["ORIGIN_PRIOR"] == "none":
+        die(f"{rcfg} supplies no origin, which dnFBDSP needs.")
+    if r["MODEL"] == "fbdsp" and r["RANGE_START"] == "divergence":
+        die(f"{rcfg} asks for divergence times, which dnFBDSP does not report: on a tree a "
+            f"range's start is its own origination.")
     template = tools.script(TEMPLATES[r["MODEL"]])
-    complete = "true" if r["INFER"] == "complete" else "false"
     occurrences = f"occurrences_{r['REPORTING']}"
     if not os.path.isdir(os.path.join(batch, occurrences)):
         die(f"the batch has no {occurrences}")
@@ -206,7 +221,7 @@ def analyze(run, force=False, jobs=1, slots=None, slot_dir=None):
         head = [f"seed({int(r['SEED']) + rep + 1000003 * (draw - 1)})",
                 f'rep <- "{rep}"', f'ORIGIN_PRIOR <- "{r["ORIGIN_PRIOR"]}"',
                 f"MAXFA <- {max_first_appearance(taxa)}",
-                f"SKYLINE <- {sky}", f"COMPLETE <- {complete}", f'COND <- "{r["COND"]}"',
+                f"SKYLINE <- {sky}", f'REPORTING <- "{r["INFER"]}"', f'COND <- "{r["COND"]}"',
                 f"RHO <- {r['RHO']}", f"GENS <- {r['GENS']}", f"PRINTGEN <- {r['PRINTGEN']}",
                 f'BATCHDIR <- "{absolute(batch)}"', f'OCCURRENCES <- "{occurrences}"',
                 f'OUTDIR <- "{absolute(to)}"']
@@ -217,6 +232,16 @@ def analyze(run, force=False, jobs=1, slots=None, slot_dir=None):
         head += [f"DROP_PRESENT_ONLY <- {r['DROP_PRESENT_ONLY']}",
                  f"LATENTS <- {r['LATENTS']}", f"COEXISTENCE <- {coex}",
                  f'RANGE_START <- "{r["RANGE_START"]}"']
+        # the psi mixture and the characters take their hyperpriors from the batch, which drew them
+        head += [f"PSI_MIX <- {r['PSI_MIX']}", f"MIX_K <- {mix_k}",
+                 f"MIX_ALPHA_RATE <- {b.get('MIX_ALPHA_RATE', 1)}", f"CHARS <- {r['CHARS']}"]
+        if r["CHARS"] == "true":
+            n_chars = int(b["N_CHARS"])
+            states = str(b.get("CHAR_STATES", "2")).split(",")
+            states = states * n_chars if len(states) == 1 else states
+            charfile = absolute(os.path.join(batch, "characters", f"characters_{rep}.nex"))
+            head += [f'CHARFILE <- "{charfile}"', f"NSTATES <- v({', '.join(states)})",
+                     f"EPS_A <- {b.get('EPS_A', 1)}", f"EPS_B <- {b.get('EPS_B', 9)}"]
         head += [f'BINDIR <- "{tools.SCRIPTS}"'] + treated
         head += [f'source("{template}")']
         rev = os.path.join(work, f"run_{rep}.Rev")

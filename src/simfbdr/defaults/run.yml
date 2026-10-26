@@ -6,9 +6,9 @@
 #                                 # any of simfbdr, rb, as `simfbdr uses` prints them.
 
 inference:
-  model:                        # required. fbdrp: dnFBDRP; bds: dnBDS
+  model:                        # required. fbdrp: dnFBDRP; bds: dnBDS; fbdsp: dnFBDSP, the tree process
   occurrences:                  # required. the batch's occurrences_<this> directory
-  reporting_model:              # required. complete | firstlast
+  reporting_model:              # required. complete | firstlast | presence
   occurrence_ages: reported     # reported | midpoint | drawn. midpoint puts each occurrence at its
                                 # bin's middle, drawn at a uniform draw within it, as an exact age
   age_draws: 1                  # when drawn: this many draws, a chain each, pooled into one
@@ -25,6 +25,10 @@ inference:
   coexistence:                   # left out, each process keeps its own published default: dnFBDRP
                                  # weights every birth by the lineages alive to produce it, dnBDS does not
   drop_present_only_taxa: false # bds only
+  psi_mixture: false            # true assumes the batch's psi mixture and estimates alpha; false analyzes
+                                # the same data under a single psi. fbdrp only
+  characters: false             # true adds the batch's characters under dnPhyloMorphospeciation and
+                                # estimates epsilon. fbdsp only
 
 mcmc:
   generations:                  # required
