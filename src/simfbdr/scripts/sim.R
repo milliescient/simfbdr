@@ -219,11 +219,16 @@ N_EXTANT <- suppressWarnings(as.integer(cfg_opt("N_EXTANT", NA)))
 BACKWARD <- !is.na(N_EXTANT)
 
 # A psi mixture: each species draws one of MIX_K relative sampling rates at its birth,
-# independently of its parent, from a discretized gamma of shape alpha with equal weights. Unset
+# independently of its parent. gamma: a discretized gamma of shape alpha with equal weights.
+# invisible: one component that never samples and a low and a high rate, with free weights. Unset
 # or 1 is none, and then no extra random number is drawn, so such a batch reproduces exactly.
-MIX_K <- as.integer(cfg_opt("MIX_K", 1))
+MIX_MODEL <- Sys.getenv("MIX_MODEL", "gamma")
+if (!MIX_MODEL %in% c("gamma", "invisible")) stop("psi_mixture.model must be gamma or invisible")
+MIX_K <- as.integer(cfg_opt("MIX_K", if (MIX_MODEL == "invisible") 3 else 1))
 MIX_ALPHA_RATE <- cfg_opt("MIX_ALPHA_RATE", 1)
+MIX_W_CONC <- cfg_opt("MIX_W_CONC", 1)
 if (MIX_K < 1) stop("psi_mixture.components must be at least 1")
+if (MIX_MODEL == "invisible" && MIX_K != 3) stop("psi_mixture.model invisible has 3 components")
 
 # Characters that change only at speciation, each of a new species' changing with probability
 # epsilon to a uniformly drawn other state. Unset is none, again with no extra draws.
@@ -267,7 +272,8 @@ truth_of <- function(th, lambda, mu, psi, age) {
   if (is.na(GAMMA_L_RATE)) v <- c(v, gamma_rate_lambda = th$gamma_rate_lambda)
   if (TURNOVER == "none" && is.na(GAMMA_M_RATE)) v <- c(v, gamma_rate_mu = th$gamma_rate_mu)
   if (TURNOVER != "none") v <- c(v, turnover = th$turnover)
-  if (MIX_K > 1) v <- c(v, alpha = th$alpha)
+  if (MIX_K > 1 && MIX_MODEL == "gamma") v <- c(v, alpha = th$alpha)
+  if (MIX_MODEL == "invisible") v <- c(v, setNames(th$mix_w, paste0("mix_w", 1:3)), mix_r = th$mix_r)
   if (N_CHARS > 0) v <- c(v, epsilon = th$epsilon)
   if (ANAGENESIS) v <- c(v, lambda_a = th$lambda_a)
   v
@@ -296,7 +302,12 @@ draw_theta <- function() {
                gamma_rate_lambda = b_lambda, turnover = turnover)
   }
   # drawn last, and only when asked for, so the draws before them are what they always were
-  if (MIX_K > 1) th$alpha <- rexp(1, MIX_ALPHA_RATE)
+  if (MIX_K > 1 && MIX_MODEL == "gamma") th$alpha <- rexp(1, MIX_ALPHA_RATE)
+  if (MIX_MODEL == "invisible") {
+    g <- rgamma(3, MIX_W_CONC)
+    th$mix_w <- g / sum(g)
+    th$mix_r <- runif(1)
+  }
   if (N_CHARS > 0) th$epsilon <- rbeta(1, EPS_A, EPS_B)
   if (ANAGENESIS) th$lambda_a <- rgamma(1, GAMMA_L_SHAPE, rate = b_lambda)
   th
@@ -363,9 +374,18 @@ add_anagenesis <- function(sim, fossils, lambda_a) {
   list(SIM = sim, FOSSILS = fossils, ORIG = rep(seq_len(n0), n_seg))
 }
 
+# A replicate's relative rate and weight of each component. NULL weights are equal. invisible:
+# (0, r nu_high, nu_high), with nu_high = 1/(w2 r + w3) so that psi stays the mean rate.
+mixture <- function(th) {
+  if (MIX_MODEL == "gamma") return(list(rate = discretized_gamma(th$alpha, MIX_K), weight = NULL))
+  high <- 1 / (th$mix_w[2] * th$mix_r + th$mix_w[3])
+  list(rate = c(0, th$mix_r * high, high), weight = th$mix_w)
+}
+
 # Each species' component, drawn at its birth and independent of its parent's. NULL without a
 # mixture, which draws nothing.
-draw_components <- function(n) if (MIX_K > 1) sample.int(MIX_K, n, replace = TRUE) else NULL
+draw_components <- function(n, weight = NULL)
+  if (MIX_K > 1) sample.int(MIX_K, n, replace = TRUE, prob = weight) else NULL
 
 # Character states of every species, sampled or not, down the true tree. A species keeps its
 # parent's states except that each changes with probability epsilon, to a uniformly drawn other
@@ -450,7 +470,7 @@ bd_sim_bounded <- function(n0, lambda, mu, tMax, lShifts, mShifts, nFinal) {
 # output rather than a draw. FossilSim then assigns budding species identity to the complete
 # tree: beta = 0 is budding, lambda.a = 0 no anagenesis. Both packages index rates
 # youngest-first, and the pipeline carries them oldest-first, so both arguments reverse.
-backward_sim <- function(n_extant, lambda, mu, psi, breaks, alpha = NULL, lambda_a = 0) {
+backward_sim <- function(n_extant, lambda, mu, psi, breaks, mix = NULL, lambda_a = 0) {
   tr <- TreeSim::sim.rateshift.taxa(n = n_extant, numbsim = 1,
                                     lambda = rev(lambda), mu = rev(mu),
                                     frac = rep(1, length(lambda)),
@@ -481,7 +501,7 @@ backward_sim <- function(n_extant, lambda, mu, psi, breaks, alpha = NULL, lambda
   # the grid must be monotone and reach past the tree whichever is deeper, the oldest break or
   # the origin, or the last interval is malformed
   top <- max(max(TS), if (length(breaks)) max(breaks) else 0) + 1
-  comp <- draw_components(length(TS))
+  comp <- draw_components(length(TS), mix$weight)
   # an anagenetic species continues its ancestor's lineage and keeps its sampling component, as
   # in the forward simulator. Oldest first, so an ancestor is settled before its descendant.
   if (!is.null(comp)) for (i in which(anag)) comp[i] <- comp[PAR[i]]
@@ -490,13 +510,17 @@ backward_sim <- function(n_extant, lambda, mu, psi, breaks, alpha = NULL, lambda
                                             interval.ages = c(0, breaks, top))
   } else {
     # each component's species sample at its own multiple of psi
-    r <- discretized_gamma(alpha, MIX_K)
+    r <- mix$rate
     fos <- do.call(rbind, lapply(seq_len(MIX_K), function(h) {
       keep <- idx[tx$sp] %in% which(comp == h)
-      if (!any(keep)) return(NULL)
+      if (!any(keep) || r[h] == 0) return(NULL)
       FossilSim::sim.fossils.intervals(taxonomy = tx[keep, ], rates = rev(psi) * r[h],
                                        interval.ages = c(0, breaks, top))
     }))
+    # no component left a fossil, which a component that never samples makes common
+    if (is.null(fos))
+      fos <- FossilSim::fossils(data.frame(sp = numeric(0), edge = numeric(0), hmin = numeric(0),
+                                           hmax = numeric(0)), from.taxonomy = TRUE)
   }
 
   # an occurrence cannot predate the tree it was sampled on, and a non-finite age would be
@@ -641,7 +665,7 @@ simulate_rep <- function(rates, age, shifts,
         redraw()
       }
 
-      bw <- backward_sim(N_EXTANT, lambda, mu, psi, cov_breaks, alpha = th$alpha,
+      bw <- backward_sim(N_EXTANT, lambda, mu, psi, cov_breaks, mix = if (MIX_K > 1) mixture(th),
                          lambda_a = if (ANAGENESIS) th$lambda_a else 0)
       sim <- bw$SIM
       fossils <- bw$FOSSILS
@@ -674,15 +698,18 @@ simulate_rep <- function(rates, age, shifts,
                                     rShifts = if (length(psi) < 2) NULL else pShifts,
                                     bins = bins, returnAll = TRUE))
     # kept beside sim, whose shape paleobuddy checks
-    comp <- draw_components(length(sim$TS))
+    mix <- if (MIX_K > 1) mixture(th)
+    comp <- draw_components(length(sim$TS), mix$weight)
     if (is.null(comp)) {
       fossils <- sample_at(psi)
     } else {
-      r <- discretized_gamma(th$alpha, MIX_K)
       fossils <- do.call(rbind, lapply(seq_len(MIX_K), function(h) {
         S <- which(comp == h)
-        if (length(S)) sample_at(psi * r[h], S)
+        if (length(S) && mix$rate[h] > 0) sample_at(psi * mix$rate[h], S)
       }))
+      if (is.null(fossils))
+        fossils <- data.frame(Species = character(0), Extant = logical(0), SampT = numeric(0),
+                              MaxT = numeric(0), MinT = numeric(0))
     }
 
     # split species at anagenetic events before any of them is reported. A segment keeps the
@@ -1157,6 +1184,9 @@ if (!exists("sim_functions_only")) {
             GAMMA_P_SHAPE, GAMMA_P_RATE, GAMMA_RATE_MAX)
   if (MIX_K > 1) {
     keys <- c(keys, "MIX_K", "MIX_ALPHA_RATE"); vals <- c(vals, MIX_K, MIX_ALPHA_RATE)
+    if (MIX_MODEL != "gamma") {
+      keys <- c(keys, "MIX_MODEL", "MIX_W_CONC"); vals <- c(vals, MIX_MODEL, MIX_W_CONC)
+    }
   }
   if (N_CHARS > 0) {
     keys <- c(keys, "N_CHARS", "EPS_A", "EPS_B"); vals <- c(vals, N_CHARS, EPS_A, EPS_B)

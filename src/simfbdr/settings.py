@@ -54,11 +54,17 @@ BATCH_SETTINGS = [
      "set, trees are drawn backward from exactly this many extant species and the origin is an "
      "output rather than a draw"),
 
+    ("MIX_MODEL", "psi_mixture.model",
+     "gamma: K rates of a discretized gamma of shape alpha, with equal weights; invisible: three "
+     "components, one that never samples and a low and a high rate, with free weights"),
     ("MIX_K", "psi_mixture.components",
-     "each species draws one of this many relative sampling rates at its birth, a discretized "
-     "gamma of shape alpha with equal weights; unset or 1, every species samples at psi"),
+     "each species draws one of this many relative sampling rates at its birth; unset or 1, "
+     "every species samples at psi. invisible has 3"),
     ("MIX_ALPHA_RATE", "psi_mixture.alpha_prior_rate",
-     "alpha ~ Exponential(this rate), drawn per replicate"),
+     "gamma: alpha ~ Exponential(this rate), drawn per replicate"),
+    ("MIX_W_CONC", "psi_mixture.weights_prior",
+     "invisible: the weights ~ Dirichlet(this, this, this), and the ratio of the low rate to "
+     "the high ~ Uniform(0, 1), drawn per replicate"),
     ("N_CHARS", "characters.count",
      "morphological characters that change only at speciation; unset, none are simulated"),
     ("CHAR_STATES", "characters.states",
@@ -80,8 +86,8 @@ RUN_SETTINGS = [
      "complete: every occurrence is reported; firstlast: each taxon's oldest and youngest; "
      "presence: each reported interval holds at least its count"),
     ("PSI_MIX", "inference.psi_mixture",
-     "assume the batch's psi mixture, estimating alpha and each species' component; false "
-     "analyzes the same data under a single psi"),
+     "assume the batch's psi mixture, estimating its hyperparameters and each species' "
+     "component (fbdrp or fbdsp); false analyzes the same data under a single psi"),
     ("ANA", "inference.anagenesis",
      "estimate the anagenetic rate lambda_a; false analyzes the data as pure budding. fbdsp only"),
     ("CHARS", "inference.characters",
@@ -138,6 +144,7 @@ RUN_REQUIRED = ["MODEL", "REPORTING", "INFER", "COND", "RHO", "GENS", "PRINTGEN"
 CHOICES = {"RANGE_START": ("origination", "divergence"), "MODEL": ("fbdrp", "bds", "fbdsp"),
            "INFER": ("complete", "firstlast", "presence"),
            "PSI_MIX": ("true", "false"), "CHARS": ("true", "false"),
+           "MIX_MODEL": ("gamma", "invisible"),
            "ANAGENESIS": ("true", "false"), "ANA": ("true", "false"),
            "COND": ("time", "sampling", "survival", "nTaxa"),
            "TAXA_COUNT": ("fossil", "record"),

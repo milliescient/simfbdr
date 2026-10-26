@@ -57,10 +57,12 @@ accepted_replicates:
   min_fossil_taxa: 0
 
 psi_mixture:                       # unset, every species samples fossils at psi
-  components:                      # K. each species draws one of K relative rates at its birth, independently
-                                   # of its parent: a discretized gamma of shape alpha with equal weights,
-                                   # so psi stays the mean rate
-  alpha_prior_rate: 1              # alpha ~ Exponential(this), drawn per replicate
+  model: gamma                     # gamma or invisible. Either way each species draws its relative rate at its
+                                   # birth, independently of its parent, and psi stays the mean rate
+  components:                      # K. gamma: K rates of a discretized gamma of shape alpha, equal weights.
+                                   # invisible: 3, rates (0, r nu_high, nu_high) with nu_high = 1/(w2 r + w3)
+  alpha_prior_rate: 1              # gamma: alpha ~ Exponential(this), drawn per replicate
+  weights_prior: 1                 # invisible: w ~ Dirichlet(this, this, this) and r ~ Uniform(0, 1), drawn per replicate
 
 characters:                        # unset, no characters are simulated
   count:                           # characters that change only at speciation, starting from uniform states

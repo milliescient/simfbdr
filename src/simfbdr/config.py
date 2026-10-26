@@ -88,6 +88,10 @@ def load(path, kind, with_defaults=True):
         if key in S.CHOICES and out[key] not in S.CHOICES[key]:
             raise SystemExit(f"simfbdr: {path}: {name} is {out[key]}; it is one of "
                              f"{', '.join(S.CHOICES[key])}")
+    # the invisible mixture has exactly three components, so it needs no count
+    if out.get("MIX_MODEL") == "invisible":
+        if out.setdefault("MIX_K", "3") != "3":
+            raise SystemExit(f"simfbdr: {path}: psi_mixture.model invisible has 3 components")
     name_of = {key: name for key, name, _ in table}
     if with_defaults is False:
         out.pop("_uses")

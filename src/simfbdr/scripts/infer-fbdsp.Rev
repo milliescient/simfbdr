@@ -7,7 +7,7 @@
 ###
 ### Set before sourcing: rep, SKYLINE, REPORTING, COND, RHO, RANGE_START, GENS, PRINTGEN,
 ###   OCCURRENCES, BATCHDIR, OUTDIR, the GAMMA_ settings, AGE_MIN, AGE_MAX, ORIGIN_PRIOR, MAXFA,
-###   ANAGENESIS, CHARS, and with CHARS: CHARFILE, NSTATES, EPS_A, EPS_B
+###   ANAGENESIS, CHARS, and with CHARS: CHARFILE, NSTATES, EPS_A, EPS_B, and as for mixture-prior.Rev
 
 # TAXA is set when the run treats the occurrence ages some other way than as reported
 if (!exists("TAXA")) TAXA <- BATCHDIR + "/" + OCCURRENCES + "/taxa_" + rep + ".tsv"
@@ -38,12 +38,19 @@ if (ANAGENESIS) {
     lambda_a <- 0.0
 }
 
+# each species draws a relative sampling rate at budding, from the batch's mixture, and an
+# anagenetic species keeps its ancestor's
+if (!exists("PSI_MIX")) PSI_MIX <- FALSE
+source(BINDIR + "/mixture-prior.Rev")
+
 if (SKYLINE) {
     tr ~ dnFBDSP(taxa=taxa, lambda=lambda, mu=mu, psi=psi, rho=RHO, present=PRESENT,
-                 timeline=timeline, condition=COND, origin=origin, lambda_a=lambda_a)
+                 timeline=timeline, condition=COND, origin=origin, lambda_a=lambda_a,
+                 psiMixtureRates=mix_rates, psiMixtureWeights=mix_w)
 } else {
     tr ~ dnFBDSP(taxa=taxa, lambda=lambda, mu=mu, psi=psi, rho=RHO, present=PRESENT,
-                 condition=COND, origin=origin, lambda_a=lambda_a)
+                 condition=COND, origin=origin, lambda_a=lambda_a,
+                 psiMixtureRates=mix_rates, psiMixtureWeights=mix_w)
 }
 
 rec ~ dnFossilRecord(ranges=tr, reporting=REPORTING)
@@ -66,6 +73,11 @@ if (ANAGENESIS) {
 }
 # the first and last appearances, which the tree does not carry
 moves.append( mvStratigraphicRange(tr, weight=taxa.size()/5) )
+
+# an exact Gibbs draw of each species' component
+if (PSI_MIX) {
+    moves.append( mvPsiMixtureAllocation(tr, weight=taxa.size()/5) )
+}
 
 # rho < 1 puts a point mass at the present on every taxon reported extinct
 if (RHO < 1.0) {
@@ -99,6 +111,8 @@ if (LATENTS) {
     # under presence, 1 where a taxon's first and last appearances are one age: whether its one
     # reported occurrence in a bin was its only one there, which the record does not say
     if (REPORTING == "presence") single := tr.getSingletonStatus()
+    # each taxon's psi mixture component, numbered from 1
+    if (PSI_MIX) comp := tr.getPsiMixtureComponents()
 }
 
 mymodel = model(tr)

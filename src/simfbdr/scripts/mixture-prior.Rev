@@ -1,0 +1,27 @@
+### The psi mixture each species draws its relative sampling rate from, as the batch simulated it,
+### for infer-fbdrp.Rev and infer-fbdsp.Rev. Sets mix_rates and mix_w for psiMixtureRates and
+### psiMixtureWeights. gamma: a discretized gamma of shape alpha with equal weights. invisible: rates
+### (0, r nu_high, nu_high) with weights mix_w, nu_high = 1/(w2 r + w3) keeping psi the mean rate.
+### Without a mixture the single component v(1.0) is exactly the plain density.
+###
+### Set before sourcing: PSI_MIX, MIX_K, MIX_ALPHA_RATE, MIX_MODEL, MIX_W_CONC, and moves
+
+if (!exists("MIX_MODEL")) MIX_MODEL <- "gamma"
+if (PSI_MIX && MIX_MODEL == "invisible") {
+    mix_w ~ dnDirichlet( rep(MIX_W_CONC, 3) )
+    moves.append( mvBetaSimplex(mix_w, alpha=10, weight=4) )
+    moves.append( mvDirichletSimplex(mix_w, alpha=50, weight=2) )
+    mix_r ~ dnUniform(0, 1)
+    moves.append( mvSlide(mix_r, delta=0.05, weight=3) )
+    moves.append( mvScale(mix_r, lambda=0.5, weight=3) )
+    nu_high := abs( 1 / (mix_w[2]*mix_r + mix_w[3]) )
+    mix_rates := v(0.0, abs(mix_r*nu_high), nu_high)
+} else if (PSI_MIX) {
+    alpha ~ dnExponential(MIX_ALPHA_RATE)
+    moves.append( mvScale(alpha, lambda=0.5, weight=3) )
+    mix_rates := fnDiscretizeGamma(alpha, alpha, MIX_K)
+    mix_w <- simplex( rep(1, MIX_K) )
+} else {
+    mix_rates <- v(1.0)
+    mix_w <- simplex( v(1.0) )
+}

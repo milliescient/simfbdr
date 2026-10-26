@@ -24,16 +24,8 @@ source(BINDIR + "/rates-prior.Rev")
 
 
 
-# Each species draws a relative sampling rate at its birth: a discretized gamma of shape alpha with
-# equal weights, as the batch simulated it. Without it the single component v(1.0) is exactly
-# the plain density.
-if (PSI_MIX) {
-    alpha ~ dnExponential(MIX_ALPHA_RATE)
-    moves.append( mvScale(alpha, lambda=0.5, weight=3) )
-    mix_rates := fnDiscretizeGamma(alpha, alpha, MIX_K)
-} else {
-    mix_rates <- v(1.0)
-}
+# each species draws a relative sampling rate at its birth, from the batch's mixture
+source(BINDIR + "/mixture-prior.Rev")
 
 # uniform is the simulator's own age draw, U(AGE_MIN, AGE_MAX). exponential is PyRate's:
 # rate and lower truncation both the oldest observed first appearance, no upper bound.
@@ -58,21 +50,21 @@ if (ORIGIN_PRIOR == "none") {
     if (SKYLINE) {
         bd ~ dnFBDRP(taxa=taxa, lambda=lambda, mu=mu, psi=psi, rho=RHO, present=PRESENT,
                  timeline=timeline, condition=COND, coexistence=COEXISTENCE, requireParent=REQUIRE_PARENT,
-                 psiMixtureRates=mix_rates)
+                 psiMixtureRates=mix_rates, psiMixtureWeights=mix_w)
     } else {
         bd ~ dnFBDRP(taxa=taxa, lambda=lambda, mu=mu, psi=psi, rho=RHO, present=PRESENT,
                  condition=COND, coexistence=COEXISTENCE, requireParent=REQUIRE_PARENT,
-                 psiMixtureRates=mix_rates)
+                 psiMixtureRates=mix_rates, psiMixtureWeights=mix_w)
     }
 } else {
     if (SKYLINE) {
         bd ~ dnFBDRP(taxa=taxa, lambda=lambda, mu=mu, psi=psi, rho=RHO, present=PRESENT,
                  timeline=timeline, condition=COND, origin=origin, coexistence=COEXISTENCE, requireParent=REQUIRE_PARENT,
-                 psiMixtureRates=mix_rates)
+                 psiMixtureRates=mix_rates, psiMixtureWeights=mix_w)
     } else {
         bd ~ dnFBDRP(taxa=taxa, lambda=lambda, mu=mu, psi=psi, rho=RHO, present=PRESENT,
                  condition=COND, origin=origin, coexistence=COEXISTENCE, requireParent=REQUIRE_PARENT,
-                 psiMixtureRates=mix_rates)
+                 psiMixtureRates=mix_rates, psiMixtureWeights=mix_w)
     }
 }
 
@@ -128,6 +120,8 @@ if (LATENTS) {
     # under presence, 1 where a taxon's first and last appearances are one age: whether its one
     # reported occurrence in a bin was its only one there, which the record does not say
     if (REPORTING == "presence") single := bd.getSingletonStatus()
+    # each taxon's psi mixture component, numbered from 1
+    if (PSI_MIX) comp := bd.getPsiMixtureComponents()
 }
 
 mymodel = model(bd)

@@ -264,12 +264,22 @@ often enough to be kept. turnover is a truth and is estimated; mu is then a dete
 
 ## Sampling heterogeneity
 
-A batch with `psi_mixture.components: K` gives each species a relative sampling rate drawn at its
-birth, independently of its parent: one of the K rates of a discretized gamma of shape alpha,
-with equal weights, so psi stays the mean rate. alpha ~ Exponential(`alpha_prior_rate`) is drawn
-per replicate and is a truth like the rates; each species' component is in
-`true_components/`. A run with `inference.psi_mixture: true` assumes the mixture and estimates
-alpha (dnFBDRP only); `false` analyzes the same data under a single psi.
+A batch with a `psi_mixture` gives each species a relative sampling rate drawn at its birth,
+independently of its parent, with psi staying the mean rate. Its `model` is one of two:
+
+- `gamma` (the default): `components: K` rates of a discretized gamma of shape alpha, with equal
+  weights. alpha ~ Exponential(`alpha_prior_rate`) is drawn per replicate.
+- `invisible`: three components, one that never samples fossils and a low and a high rate, as on
+  the notebook page *Heavily sampled species inflate turnover under a single sampling rate*. The
+  rates are (0, r nu_high, nu_high) with nu_high = 1/(w2 r + w3), the weights
+  w ~ Dirichlet(`weights_prior`, three times) and r ~ Uniform(0, 1), drawn per replicate. A
+  species in the first component is in the record only if it lives at the present.
+
+The hyperparameters (alpha, or `mix_w1`..`mix_w3` and `mix_r`) are truths like the rates, and
+each species' component is in `true_components/`. A run with `inference.psi_mixture: true`
+assumes the batch's mixture and estimates its hyperparameters and each species' component, which
+it logs as `comp[i]`, under dnFBDRP or dnFBDSP, where an anagenetic species keeps its ancestor's
+component as the simulator draws it; `false` analyzes the same data under a single psi.
 
 ## Morphospeciation
 

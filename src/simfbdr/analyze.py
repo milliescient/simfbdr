@@ -144,11 +144,11 @@ def analyze(run, force=False, jobs=1, slots=None, slot_dir=None):
         die(f"{rcfg} asks for divergence times, which dnBDS does not offer: under complete "
             f"lineage sampling a birth is the species' own origination.")
     mix_k = int(b.get("MIX_K") or 1)
-    if r["PSI_MIX"] == "true" and r["MODEL"] != "fbdrp":
-        die(f"{rcfg} asks for the psi mixture, which only dnFBDRP has.")
+    if r["PSI_MIX"] == "true" and r["MODEL"] not in ("fbdrp", "fbdsp"):
+        die(f"{rcfg} asks for the psi mixture, which only dnFBDRP and dnFBDSP have.")
     if r["PSI_MIX"] == "true" and mix_k < 2:
         die(f"{rcfg} asks for the psi mixture, and {batch} was simulated without one: the "
-            f"analysis takes its components and alpha prior from the batch.")
+            f"analysis takes its components and their prior from the batch.")
     if r["CHARS"] == "true" and r["MODEL"] != "fbdsp":
         die(f"{rcfg} asks for the characters, which need the tree process: model fbdsp.")
     if r["CHARS"] == "true" and not b.get("N_CHARS"):
@@ -248,7 +248,9 @@ def analyze(run, force=False, jobs=1, slots=None, slot_dir=None):
             head += [f"REQUIRE_PARENT <- {r['REQUIRE_PARENT']}"]
         # the psi mixture and the characters take their hyperpriors from the batch, which drew them
         head += [f"PSI_MIX <- {r['PSI_MIX']}", f"MIX_K <- {mix_k}",
-                 f"MIX_ALPHA_RATE <- {b.get('MIX_ALPHA_RATE', 1)}", f"CHARS <- {r['CHARS']}",
+                 f"MIX_ALPHA_RATE <- {b.get('MIX_ALPHA_RATE', 1)}",
+                 f'MIX_MODEL <- "{b.get("MIX_MODEL") or "gamma"}"', f"MIX_W_CONC <- {b.get('MIX_W_CONC') or 1}",
+                 f"CHARS <- {r['CHARS']}",
                  f"ANAGENESIS <- {r['ANA']}"]
         if r["CHARS"] == "true":
             n_chars = int(b["N_CHARS"])
