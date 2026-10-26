@@ -125,6 +125,9 @@ if (LATENTS) {
     dd   := bd.getExtinctionTimes()
     tau1 := bd.getFirstAppearances()
     tauK := bd.getLastAppearances()
+    # under presence, 1 where a taxon's first and last appearances are one age: whether its one
+    # reported occurrence in a bin was its only one there, which the record does not say
+    if (REPORTING == "presence") single := bd.getSingletonStatus()
 }
 
 mymodel = model(bd)

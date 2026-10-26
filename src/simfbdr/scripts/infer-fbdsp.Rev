@@ -96,6 +96,9 @@ if (LATENTS) {
     dd   := tr.getExtinctionTimes()
     tau1 := tr.getFirstAppearances()
     tauK := tr.getLastAppearances()
+    # under presence, 1 where a taxon's first and last appearances are one age: whether its one
+    # reported occurrence in a bin was its only one there, which the record does not say
+    if (REPORTING == "presence") single := tr.getSingletonStatus()
 }
 
 mymodel = model(tr)
