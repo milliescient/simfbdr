@@ -239,7 +239,7 @@ def analyze(run, force=False, jobs=1, slots=None, slot_dir=None):
                  f'RANGE_START <- "{r["RANGE_START"]}"']
         # only when the config asks for it, so a template running against an rb that has no
         # such argument never sees it
-        if r["REQUIRE_PARENT"]:
+        if r.get("REQUIRE_PARENT"):
             head += [f"REQUIRE_PARENT <- {r['REQUIRE_PARENT']}"]
         # the psi mixture and the characters take their hyperpriors from the batch, which drew them
         head += [f"PSI_MIX <- {r['PSI_MIX']}", f"MIX_K <- {mix_k}",
