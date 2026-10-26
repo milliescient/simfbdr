@@ -27,6 +27,8 @@ inference:
   drop_present_only_taxa: false # bds only
   psi_mixture: false            # true assumes the batch's psi mixture and estimates alpha; false analyzes
                                 # the same data under a single psi. fbdrp only
+  anagenesis: false             # true estimates the batch's anagenetic rate lambda_a; false analyzes the
+                                # data as pure budding. fbdsp only
   characters: false             # true adds the batch's characters under dnPhyloMorphospeciation and
                                 # estimates epsilon. fbdsp only
 

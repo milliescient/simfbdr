@@ -16,6 +16,8 @@ origin_age:                        # origin ~ Uniform(min, max). with tree.extan
   max:                             # required
 
 tree:
+  anagenesis: false                # true: species also arise by anagenesis, each lineage splitting at rate
+                                   # lambda_a, drawn per replicate from the speciation prior, constant in time
   extant_species:                  # unset, trees run forward from a drawn origin_age. set, they are drawn
                                    # backward from exactly this many extant species
 

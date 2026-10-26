@@ -7,7 +7,7 @@
 ###
 ### Set before sourcing: rep, SKYLINE, REPORTING, COND, RHO, RANGE_START, GENS, PRINTGEN,
 ###   OCCURRENCES, BATCHDIR, OUTDIR, the GAMMA_ settings, AGE_MIN, AGE_MAX, ORIGIN_PRIOR, MAXFA,
-###   CHARS, and with CHARS: CHARFILE, NSTATES, EPS_A, EPS_B
+###   ANAGENESIS, CHARS, and with CHARS: CHARFILE, NSTATES, EPS_A, EPS_B
 
 # TAXA is set when the run treats the occurrence ages some other way than as reported
 if (!exists("TAXA")) TAXA <- BATCHDIR + "/" + OCCURRENCES + "/taxa_" + rep + ".tsv"
@@ -29,13 +29,21 @@ origin.setValue(AGE_MAX)
 moves.append( mvSlide(origin, delta=0.5, weight=2) )
 moves.append( mvSlide(origin, delta=2.0, weight=2) )
 
-# pure budding: the simulator has no anagenesis, and lambda_a defaults to zero
+# The anagenetic rate is constant in time and drawn from the speciation prior, as the batch drew
+# it. Without anagenesis it is zero, which is pure budding.
+if (ANAGENESIS) {
+    lambda_a ~ dnGamma(GAMMA_L_SHAPE, gamma_rate_lambda)
+    moves.append( mvSlice(lambda_a, window=0.1, weight=2, search_method="stepping_out") )
+} else {
+    lambda_a <- 0.0
+}
+
 if (SKYLINE) {
     tr ~ dnFBDSP(taxa=taxa, lambda=lambda, mu=mu, psi=psi, rho=RHO, present=PRESENT,
-                 timeline=timeline, condition=COND, origin=origin)
+                 timeline=timeline, condition=COND, origin=origin, lambda_a=lambda_a)
 } else {
     tr ~ dnFBDSP(taxa=taxa, lambda=lambda, mu=mu, psi=psi, rho=RHO, present=PRESENT,
-                 condition=COND, origin=origin)
+                 condition=COND, origin=origin, lambda_a=lambda_a)
 }
 
 rec ~ dnFossilRecord(ranges=tr, reporting=REPORTING)
@@ -49,8 +57,12 @@ if (taxa.size() > 1) {
     moves.append( mvRootTimeSlideUniform(tr, origin=origin, weight=2) )
     # which child continues its ancestor's species, which no other move relabels
     moves.append( mvRotateNode(tr, weight=taxa.size()/5) )
-    # an exact draw of the topology given the ranges, valid under pure budding
-    moves.append( mvBuddingTopologyRedraw(tr, weight=2) )
+    # an exact draw of the topology given the ranges, valid under pure budding only
+    if (!ANAGENESIS) moves.append( mvBuddingTopologyRedraw(tr, weight=2) )
+}
+# an anagenetic event is a sampled ancestor, which the initial tree holds none of
+if (ANAGENESIS) {
+    moves.append( mvCollapseExpandFossilBranch(tr, origin, weight=taxa.size()/5) )
 }
 # the first and last appearances, which the tree does not carry
 moves.append( mvStratigraphicRange(tr, weight=taxa.size()/5) )
@@ -90,9 +102,15 @@ mymodel = model(tr)
 monitors = VectorMonitors()
 if (LATENTS) {
     monitors.append( mnModel(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN) )
+} else if (CHARS && ANAGENESIS) {
+    monitors.append( mnFile(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN,
+                            lambda, mu, psi, org, epsilon, lambda_a) )
 } else if (CHARS) {
     monitors.append( mnFile(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN,
                             lambda, mu, psi, org, epsilon) )
+} else if (ANAGENESIS) {
+    monitors.append( mnFile(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN,
+                            lambda, mu, psi, org, lambda_a) )
 } else {
     monitors.append( mnFile(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN,
                             lambda, mu, psi, org) )

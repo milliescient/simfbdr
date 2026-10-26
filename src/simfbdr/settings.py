@@ -41,6 +41,9 @@ BATCH_SETTINGS = [
     ("TAXA_COUNT", "accepted_replicates.taxa_counted",
      "fossil: fossil-sampled taxa only; record: survivors seen at the present too"),
     ("MIN_FOSSIL_TAXA", "accepted_replicates.min_fossil_taxa", ""),
+    ("ANAGENESIS", "tree.anagenesis",
+     "true: species also arise by anagenesis, at a rate lambda_a drawn per replicate from the "
+     "speciation prior and constant in time"),
     ("N_EXTANT", "tree.extant_species",
      "set, trees are drawn backward from exactly this many extant species and the origin is an "
      "output rather than a draw"),
@@ -73,6 +76,8 @@ RUN_SETTINGS = [
     ("PSI_MIX", "inference.psi_mixture",
      "assume the batch's psi mixture, estimating alpha and each species' component; false "
      "analyzes the same data under a single psi"),
+    ("ANA", "inference.anagenesis",
+     "estimate the anagenetic rate lambda_a; false analyzes the data as pure budding. fbdsp only"),
     ("CHARS", "inference.characters",
      "analyze the batch's characters under dnPhyloMorphospeciation, estimating epsilon; fbdsp only"),
     ("AGES", "inference.occurrence_ages",
@@ -124,6 +129,7 @@ RUN_REQUIRED = ["MODEL", "REPORTING", "INFER", "COND", "RHO", "GENS", "PRINTGEN"
 CHOICES = {"RANGE_START": ("origination", "divergence"), "MODEL": ("fbdrp", "bds", "fbdsp"),
            "INFER": ("complete", "firstlast", "presence"),
            "PSI_MIX": ("true", "false"), "CHARS": ("true", "false"),
+           "ANAGENESIS": ("true", "false"), "ANA": ("true", "false"),
            "COND": ("time", "sampling", "survival", "nTaxa"),
            "TAXA_COUNT": ("fossil", "record"),
            "ORIGIN_PRIOR": ("uniform", "exponential", "none"),

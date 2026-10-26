@@ -151,6 +151,11 @@ def analyze(run, force=False, jobs=1, slots=None, slot_dir=None):
         die(f"{rcfg} asks for the characters, which need the tree process: model fbdsp.")
     if r["CHARS"] == "true" and not b.get("N_CHARS"):
         die(f"{rcfg} asks for the characters, and {batch} simulated none.")
+    if r["ANA"] == "true" and r["MODEL"] != "fbdsp":
+        die(f"{rcfg} asks for anagenesis, which only the tree process has: model fbdsp.")
+    if r["ANA"] == "true" and b.get("ANAGENESIS") != "true":
+        die(f"{rcfg} asks for anagenesis, and {batch} was simulated without it: the analysis "
+            f"takes the anagenetic rate's prior from the batch.")
     if r["MODEL"] == "fbdsp" and r["ORIGIN_PRIOR"] == "none":
         die(f"{rcfg} supplies no origin, which dnFBDSP needs.")
     if r["MODEL"] == "fbdsp" and r["RANGE_START"] == "divergence":
@@ -234,7 +239,8 @@ def analyze(run, force=False, jobs=1, slots=None, slot_dir=None):
                  f'RANGE_START <- "{r["RANGE_START"]}"']
         # the psi mixture and the characters take their hyperpriors from the batch, which drew them
         head += [f"PSI_MIX <- {r['PSI_MIX']}", f"MIX_K <- {mix_k}",
-                 f"MIX_ALPHA_RATE <- {b.get('MIX_ALPHA_RATE', 1)}", f"CHARS <- {r['CHARS']}"]
+                 f"MIX_ALPHA_RATE <- {b.get('MIX_ALPHA_RATE', 1)}", f"CHARS <- {r['CHARS']}",
+                 f"ANAGENESIS <- {r['ANA']}"]
         if r["CHARS"] == "true":
             n_chars = int(b["N_CHARS"])
             states = str(b.get("CHAR_STATES", "2")).split(",")

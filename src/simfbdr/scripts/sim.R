@@ -223,6 +223,10 @@ if (N_CHARS > 0) {
 }
 EPS_A <- cfg_opt("EPS_A", 1); EPS_B <- cfg_opt("EPS_B", 9)
 
+# Anagenesis: each lineage also splits into a new species at rate lambda_a, drawn per replicate
+# from the speciation prior and constant in time. Off, nothing extra is drawn.
+ANAGENESIS <- Sys.getenv("ANAGENESIS", "false") == "true"
+
 # RevBayes's fnDiscretizeGamma(alpha, alpha, K): each category's mean, so the rates average one
 discretized_gamma <- function(alpha, K) {
   q <- c(0, qgamma(seq_len(K - 1) / K, alpha, rate = alpha), Inf)
@@ -248,6 +252,7 @@ truth_of <- function(th, lambda, mu, psi, age) {
   if (is.na(GAMMA_M_RATE)) v <- c(v, gamma_rate_mu = th$gamma_rate_mu)
   if (MIX_K > 1) v <- c(v, alpha = th$alpha)
   if (N_CHARS > 0) v <- c(v, epsilon = th$epsilon)
+  if (ANAGENESIS) v <- c(v, lambda_a = th$lambda_a)
   v
 }
 
@@ -264,7 +269,69 @@ draw_theta <- function() {
   # drawn last, and only when asked for, so the draws before them are what they always were
   if (MIX_K > 1) th$alpha <- rexp(1, MIX_ALPHA_RATE)
   if (N_CHARS > 0) th$epsilon <- rbeta(1, EPS_A, EPS_B)
+  if (ANAGENESIS) th$lambda_a <- rgamma(1, GAMMA_L_SHAPE, rate = b_lambda)
   th
+}
+
+# Anagenetic speciation relabels the same tree rather than reshaping it: split each species at
+# Poisson(lambda_a) times in its lifespan and reassign occurrences by time. ORIG is the species
+# each new one is a segment of, so what was drawn per species before the split follows it.
+add_anagenesis <- function(sim, fossils, lambda_a) {
+  n0 <- length(sim$TS)
+
+  # segment boundaries per species, oldest first
+  starts <- ends <- vector("list", n0)
+  for (k in 1:n0) {
+    te <- ifelse(is.na(sim$TE[k]), 0, sim$TE[k])
+    ev <- sort(runif(rpois(1, lambda_a * (sim$TS[k] - te)), te, sim$TS[k]),
+               decreasing = TRUE)
+    starts[[k]] <- c(sim$TS[k], ev)
+    ends[[k]] <- c(ev, te)
+  }
+
+  # new indices run in (species, segment) order, so a parent's index stays below its daughter's
+  n_seg <- sapply(starts, length)
+  offset <- cumsum(c(0, n_seg))[1:n0]
+
+  # segment of species k alive at time t
+  seg_at <- function(k, t) {
+    s <- which(t <= starts[[k]] & t >= ends[[k]])
+    if (length(s) == 0) n_seg[k] else s[1]
+  }
+
+  N <- sum(n_seg)
+  TS <- TE <- rep(NA_real_, N)
+  PAR <- rep(NA_integer_, N)
+  EXTANT <- rep(FALSE, N)
+
+  for (k in 1:n0) {
+    for (s in 1:n_seg[k]) {
+      i <- offset[k] + s
+      last <- (s == n_seg[k]) && sim$EXTANT[k]
+      TS[i] <- starts[[k]][s]
+      TE[i] <- ifelse(last, NA_real_, ends[[k]][s])
+      EXTANT[i] <- last
+      # a later segment descends from the previous one; the first keeps the original
+      # parent, joined at whichever of that parent's segments was then alive
+      PAR[i] <- if (s > 1) offset[k] + s - 1 else
+        if (is.na(sim$PAR[k])) NA_integer_ else
+          offset[sim$PAR[k]] + seg_at(sim$PAR[k], sim$TS[k])
+    }
+  }
+
+  if (nrow(fossils) > 0) {
+    k <- as.integer(sub("^t", "", fossils$Species))
+    i <- offset[k] + mapply(seg_at, k, fossils$SampT)
+    fossils$Species <- paste0("t", i)
+    fossils$Extant <- EXTANT[i]
+    # retain_occs reads the first row as the oldest occurrence and the last as the youngest
+    fossils <- fossils[order(i, -fossils$SampT), , drop = FALSE]
+  }
+
+  sim <- list(TE = TE, TS = TS, PAR = PAR, EXTANT = EXTANT)
+  class(sim) <- "sim"
+
+  list(SIM = sim, FOSSILS = fossils, ORIG = rep(seq_len(n0), n_seg))
 }
 
 # Each species' component, drawn at its birth and independent of its parent's. NULL without a
@@ -353,23 +420,24 @@ bd_sim_bounded <- function(n0, lambda, mu, tMax, lShifts, mShifts, nFinal) {
 # output rather than a draw. FossilSim then assigns budding species identity to the complete
 # tree: beta = 0 is budding, lambda.a = 0 no anagenesis. Both packages index rates
 # youngest-first, and the pipeline carries them oldest-first, so both arguments reverse.
-backward_sim <- function(n_extant, lambda, mu, psi, breaks, bins, alpha = NULL) {
+backward_sim <- function(n_extant, lambda, mu, psi, breaks, bins, alpha = NULL, lambda_a = 0) {
   tr <- TreeSim::sim.rateshift.taxa(n = n_extant, numbsim = 1,
                                     lambda = rev(lambda), mu = rev(mu),
                                     frac = rep(1, length(lambda)),
                                     times = c(0, breaks), complete = TRUE)[[1]]
-  tx <- FossilSim::sim.taxonomy(tr, beta = 0, lambda.a = 0)
+  tx <- FossilSim::sim.taxonomy(tr, beta = 0, lambda.a = lambda_a)
 
   sp  <- sort(unique(tx$sp))
   TS  <- vapply(sp, function(s) max(tx$start[tx$sp == s]), 0)
   TE  <- vapply(sp, function(s) min(tx$end[tx$sp == s]), 0)
   par <- vapply(sp, function(s) tx$parent[tx$sp == s][1], 0)
+  anag <- vapply(sp, function(s) tx$mode[tx$sp == s][1] == "a", FALSE)
 
   # species 1 has to be the origin lineage: the ancestor walk in summarize.R stops there and
   # the acceptance test asks whether it was sampled
   ord <- order(TS, decreasing = TRUE)
   idx <- integer(max(sp)); idx[sp[ord]] <- seq_along(ord)
-  TS <- TS[ord]; TE <- TE[ord]; par <- par[ord]
+  TS <- TS[ord]; TE <- TE[ord]; par <- par[ord]; anag <- anag[ord]
 
   # the root's parent is 0, and R drops a zero index, so idx[par] would come back short and
   # silently shift every parent after it
@@ -384,6 +452,9 @@ backward_sim <- function(n_extant, lambda, mu, psi, breaks, bins, alpha = NULL) 
   # the origin, or the last interval is malformed
   top <- max(max(TS), if (length(breaks)) max(breaks) else 0) + 1
   comp <- draw_components(length(TS))
+  # an anagenetic species continues its ancestor's lineage and keeps its sampling component, as
+  # in the forward simulator. Oldest first, so an ancestor is settled before its descendant.
+  if (!is.null(comp)) for (i in which(anag)) comp[i] <- comp[PAR[i]]
   if (is.null(comp)) {
     fos <- FossilSim::sim.fossils.intervals(taxonomy = tx, rates = rev(psi),
                                             interval.ages = c(0, breaks, top))
@@ -533,7 +604,8 @@ simulate_rep <- function(rates, age, shifts,
         }
       }
 
-      bw <- backward_sim(N_EXTANT, lambda, mu, psi, cov_breaks, bins, alpha = th$alpha)
+      bw <- backward_sim(N_EXTANT, lambda, mu, psi, cov_breaks, bins, alpha = th$alpha,
+                         lambda_a = if (ANAGENESIS) th$lambda_a else 0)
       sim <- bw$SIM
       fossils <- bw$FOSSILS
       comp <- bw$COMP
@@ -574,6 +646,15 @@ simulate_rep <- function(rates, age, shifts,
         S <- which(comp == h)
         if (length(S)) sample_at(psi * r[h], S)
       }))
+    }
+
+    # split species at anagenetic events before any of them is reported. A segment keeps the
+    # sampling component of the lineage it continues.
+    if (ANAGENESIS) {
+      ana <- add_anagenesis(sim, fossils, th$lambda_a)
+      sim <- ana$SIM
+      fossils <- ana$FOSSILS
+      if (!is.null(comp)) comp <- comp[ana$ORIG]
     }
     }
 
@@ -1040,6 +1121,9 @@ if (!exists("sim_functions_only")) {
   }
   if (N_CHARS > 0) {
     keys <- c(keys, "N_CHARS", "EPS_A", "EPS_B"); vals <- c(vals, N_CHARS, EPS_A, EPS_B)
+  }
+  if (ANAGENESIS) {
+    keys <- c(keys, "ANAGENESIS"); vals <- c(vals, "true")
   }
   if (is.finite(MAX_LINEAGES)) {
     keys <- c(keys, "MAX_LINEAGES"); vals <- c(vals, MAX_LINEAGES)

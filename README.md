@@ -263,8 +263,17 @@ Beta(`epsilon_prior`) is drawn per replicate. The characters of every reported t
 `inference.characters: true` adds them under `dnPhyloMorphospeciation` on the dnFBDSP tree and
 estimates epsilon.
 
-A batch with neither draws no extra random number, so it is the same batch it was before
-either existed.
+## Anagenesis
+
+A batch with `tree.anagenesis: true` also lets species arise by anagenesis: each lineage splits
+into a new species at rate lambda_a, constant in time and drawn per replicate from the speciation
+prior, and its occurrences are reassigned by age. An anagenetic species keeps the sampling
+component of the lineage it continues, and changes characters with the same epsilon as a budding
+one. A run with `inference.model: fbdsp` and `inference.anagenesis: true` estimates lambda_a;
+`false` analyzes the same data as pure budding.
+
+A batch with none of these draws no extra random number, so it is the same batch it was before
+they existed.
 
 ## Dating resolution
 
