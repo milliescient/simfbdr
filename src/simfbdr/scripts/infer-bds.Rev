@@ -8,7 +8,8 @@
 ### that generated the data and the analysis of it read one definition, so they
 ### cannot drift apart.
 ###
-### Set before sourcing: rep, SKYLINE, REPORTING, COND, RHO, COEXISTENCE, RANGE_START,
+### Set before sourcing: rep, SKYLINE, REPORTING, COND, RHO, COEXISTENCE, REQUIRE_PARENT,
+###   RANGE_START,
 ###   GENS, PRINTGEN,
 ###   OCCURRENCES, BATCHDIR, OUTDIR, the GAMMA_ settings, AGE_MIN, AGE_MAX,
 ###   ORIGIN_PRIOR, MAXFA
@@ -34,6 +35,8 @@ if (DROP_PRESENT_ONLY) {
     }
     taxa <- kept
 }
+
+if (!exists("REQUIRE_PARENT")) REQUIRE_PARENT <- COEXISTENCE
 
 moves = VectorMoves()
 
@@ -64,18 +67,18 @@ if (ORIGIN_PRIOR != "none") {
 if (ORIGIN_PRIOR == "none") {
     if (SKYLINE) {
         bd ~ dnBDS(taxa=taxa, lambda=lambda, mu=mu, psi=psi, rho=RHO, present=PRESENT,
-                 timeline=timeline, condition=COND, coexistence=COEXISTENCE)
+                 timeline=timeline, condition=COND, coexistence=COEXISTENCE, requireParent=REQUIRE_PARENT)
     } else {
         bd ~ dnBDS(taxa=taxa, lambda=lambda, mu=mu, psi=psi, rho=RHO, present=PRESENT,
-                 condition=COND, coexistence=COEXISTENCE)
+                 condition=COND, coexistence=COEXISTENCE, requireParent=REQUIRE_PARENT)
     }
 } else {
     if (SKYLINE) {
         bd ~ dnBDS(taxa=taxa, lambda=lambda, mu=mu, psi=psi, rho=RHO, present=PRESENT,
-                 timeline=timeline, condition=COND, origin=origin, coexistence=COEXISTENCE)
+                 timeline=timeline, condition=COND, origin=origin, coexistence=COEXISTENCE, requireParent=REQUIRE_PARENT)
     } else {
         bd ~ dnBDS(taxa=taxa, lambda=lambda, mu=mu, psi=psi, rho=RHO, present=PRESENT,
-                 condition=COND, origin=origin, coexistence=COEXISTENCE)
+                 condition=COND, origin=origin, coexistence=COEXISTENCE, requireParent=REQUIRE_PARENT)
     }
 }
 

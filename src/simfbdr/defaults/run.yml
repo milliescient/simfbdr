@@ -22,6 +22,8 @@ inference:
   range_start: origination       # origination | divergence. origination is the species' own start,
                                  # which both processes report; divergence is where the range attaches
                                  # to the nearest sampled one, which only dnFBDRP has
+  require_parent:                # left out, follows coexistence. Off only where ranges were
+                                 # left out, since the lineage a birth came from may be one of them
   coexistence:                   # left out, each process keeps its own published default: dnFBDRP
                                  # weights every birth by the lineages alive to produce it, dnBDS does not
   drop_present_only_taxa: false # bds only
