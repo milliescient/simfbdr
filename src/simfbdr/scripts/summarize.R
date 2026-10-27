@@ -14,10 +14,12 @@
 # one rank per replicate. The latents still get their own SBC_results and are stacked
 # underneath, because a replicate with no extinct taxon drops out and their n is lower.
 #
-# The latent row covers extinct taxa only. Scoring b, d and tau1 together needs one
-# rank per taxon for each, and d is pinned at the present for an extant taxon rather
+# At rho = 1 the latent row covers extinct taxa only. Scoring b, d and tau1 together needs
+# one rank per taxon for each, and d is pinned at the present for an extant taxon rather
 # than estimated, so its rank would be meaningless. Extinction status is read off the
-# data, so restricting to it does not disturb the ranks of b or tau1.
+# data, so restricting to it does not disturb the ranks of b or tau1. Below rho = 1 it is
+# not data, so every taxon is kept, a survivor's true d is the present, and SBC breaks
+# the tie with the draws pinned there at random.
 #
 # tau1 is internal to the distribution, so master.Rev exposes it as a deterministic node
 # (bd.getAugmentedFirstAges()) and mnModel logs it with the rates, on the same generation
@@ -178,6 +180,8 @@ rate_stats <- function(mf, ids, logs) {
 latent_stats <- function(mf, ids) {
   from <- list()
   sim_dir <- mf$batch_dir
+  present <- if (is.null(mf$PRESENT)) 0 else as.numeric(mf$PRESENT)
+  status_is_data <- is.null(mf$RHO) || as.numeric(mf$RHO) == 1
   nonext <- is_nonextended(mf)
   load(file.path(sim_dir, "sim_list.RData"))   # -> sims
   draws <- list(); truth <- list()
@@ -268,8 +272,9 @@ latent_stats <- function(mf, ids) {
     cand_draws <- list(); cand_truth <- list(); cand_taxon <- list()
     for (j in seq_along(taxa)) {
       k <- as.integer(sub("t", "", taxa[j]))
-      true_d <- if (is.na(s$TE[k])) 0 else s$TE[k]
-      if (true_d <= 0) next    # d is pinned at the present for extant taxa: not estimated
+      true_d <- max(if (is.na(s$TE[k])) 0 else s$TE[k], present)
+      # at rho = 1 survival is data and pins d; below it, skipping survivors would select on the truth
+      if (true_d <= present && status_is_data) next
 
       # any pinning at all makes b a mixture of a structural node age and an estimated birth,
       # so score it only where the birth is explicit in every retained sample
@@ -302,7 +307,7 @@ latent_stats <- function(mf, ids) {
                                            taxon = cand_taxon[[j]], n_taxa = n_taxa)
   }
   if (!length(draws)) return(NULL)
-  cat("   latents: one extinct taxon from each of", length(draws), "replicates\n")
+  cat("   latents: one", if (status_is_data) "extinct taxon" else "taxon", "from each of", length(draws), "replicates\n")
   res <- stats_for(draws, posterior::as_draws_matrix(do.call(rbind, truth)))
   res$scored_from <- do.call(rbind, from)
   # youngest to oldest, the order the range is read in (rank_summary splits on this;
