@@ -26,14 +26,13 @@ if (ORIGIN_PRIOR == "exponential") {
     origin ~ dnUniform(AGE_MIN, AGE_MAX)
 }
 origin.setValue(AGE_MAX)
-moves.append( mvSlide(origin, delta=0.5, weight=2) )
-moves.append( mvSlide(origin, delta=2.0, weight=2) )
+moves.append( mvSlide(origin, delta=1, weight=2) )
 
 # The anagenetic rate is constant in time and drawn from the speciation prior, as the batch drew
 # it. Without anagenesis it is zero, which is pure budding.
 if (ANAGENESIS) {
     lambda_a ~ dnGamma(GAMMA_L_SHAPE, gamma_rate_lambda)
-    moves.append( mvSlice(lambda_a, window=0.1, weight=2, search_method="stepping_out") )
+    moves.append( mvScale(lambda_a, lambda=1, weight=2) )
 } else {
     lambda_a <- 0.0
 }
@@ -59,20 +58,20 @@ rec.clamp(taxa)
 # every age in the tree needs a move: the tips are extinction times, the internal nodes births
 moves.append( mvFossilTipTimeUniform(tr, origin=origin, weight=taxa.size()/5) )
 if (taxa.size() > 1) {
-    moves.append( mvFNPR(tr, weight=taxa.size()/5) )
-    moves.append( mvNodeTimeSlideUniform(tr, weight=taxa.size()/5) )
+    moves.append( mvFNPR(tr, weight=taxa.size()) )
+    moves.append( mvNodeTimeSlideUniform(tr, weight=taxa.size()) )
     moves.append( mvRootTimeSlideUniform(tr, origin=origin, weight=2) )
     # which child continues its ancestor's species, which no other move relabels
     moves.append( mvRotateNode(tr, weight=taxa.size()/5) )
     # an exact draw of the topology given the ranges, valid under pure budding only
-    if (!ANAGENESIS) moves.append( mvBuddingTopologyRedraw(tr, weight=2) )
+    if (!ANAGENESIS) moves.append( mvBuddingTopologyRedraw(tr, weight=4) )
 }
 # an anagenetic event is a sampled ancestor, which the initial tree holds none of
 if (ANAGENESIS) {
     moves.append( mvCollapseExpandFossilBranch(tr, origin, weight=taxa.size()/5) )
 }
 # the first and last appearances, which the tree does not carry
-moves.append( mvStratigraphicRange(tr, weight=taxa.size()/5) )
+moves.append( mvStratigraphicRange(tr, weight=taxa.size()) )
 
 # an exact Gibbs draw of each species' component
 if (PSI_MIX) {
@@ -97,7 +96,7 @@ if (CHARS) {
     moves.append( mvSlide(epsilon, delta=0.05, weight=5) )
     morph ~ dnPhyloMorphospeciation(tree=tr, nStates=NSTATES, epsilon=epsilon)
     morph.clamp(morpho)
-    moves.append( mvMorphospeciationEvents(morph, weight=taxa.size()/5) )
+    moves.append( mvMorphospeciationEvents(morph, weight=2*taxa.size()/5) )
 }
 
 org  := tr.getOrigin()
@@ -134,5 +133,7 @@ if (LATENTS) {
 }
 monitors.append( mnScreen(printgen=100000) )
 mymcmc = mcmc(mymodel, monitors, moves, moveschedule="single")
+# every move is tuned over a burn-in the log does not record
+mymcmc.burnin(generations=GENS/10, tuningInterval=1000)
 mymcmc.run(generations=GENS)
 q()

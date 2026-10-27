@@ -60,8 +60,7 @@ if (ORIGIN_PRIOR != "none") {
     # The oldest birth is welded to this node, so the record's oldest occurrence bounds it from
     # below. AGE_MAX is above every occurrence, so starting there is always feasible.
     origin.setValue(AGE_MAX)
-    moves.append( mvSlide(origin, delta=0.5, weight=2) )
-    moves.append( mvSlide(origin, delta=2.0, weight=2) )
+    moves.append( mvSlide(origin, delta=1, weight=2) )
 }
 
 if (ORIGIN_PRIOR == "none") {
@@ -86,12 +85,10 @@ if (ORIGIN_PRIOR == "none") {
 rec ~ dnFossilRecord(ranges=bd, reporting=REPORTING)
 rec.clamp(taxa)
 
-moves.append( mvMatrixElementScale(bd, lambda=0.01, weight=taxa.size()/10) )
-moves.append( mvMatrixElementScale(bd, lambda=0.1,  weight=taxa.size()/10) )
-moves.append( mvMatrixElementScale(bd, lambda=1,    weight=taxa.size()/10) )
-moves.append( mvMatrixElementSlide(bd, delta=0.01, weight=taxa.size()/10) )
-moves.append( mvMatrixElementSlide(bd, delta=0.1,  weight=taxa.size()/10) )
-moves.append( mvMatrixElementSlide(bd, delta=1,    weight=taxa.size()/10) )
+# the range ages, one scale and one slide: a range move recomputes one taxon and a rate move every
+# taxon, so the range moves carry far more weight
+moves.append( mvMatrixElementScale(bd, lambda=0.1, weight=taxa.size()) )
+moves.append( mvMatrixElementSlide(bd, delta=0.1,  weight=taxa.size()) )
 
 # lets the oldest birth change lineage, which a random walk mixes over poorly
 moves.append( mvMatrixElementSwap(bd, col=4, weight=taxa.size()/5) )
@@ -139,5 +136,7 @@ if (LATENTS) {
 }
 monitors.append( mnScreen(printgen=100000) )
 mymcmc = mcmc(mymodel, monitors, moves, moveschedule="single")
+# every move is tuned over a burn-in the log does not record
+mymcmc.burnin(generations=GENS/10, tuningInterval=1000)
 mymcmc.run(generations=GENS)
 q()

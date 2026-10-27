@@ -27,20 +27,22 @@ if (TURNOVER != "none") {
     gamma_rate_mu ~ dnUniform(0, GAMMA_RATE_MAX)
     moves.append( mvScale(gamma_rate_mu, lambda=0.5, weight=2) )
 }
+# One scale move per rate, which the template's burn-in tunes. A rate move reaches every range, so
+# it costs far more than a range move and is given far less weight.
 if (SKYLINE) {
     timeline <- readDataDelimitedFile(BATCHDIR + "/times/times_" + rep + ".tsv")[1]
     n_int <- timeline.size() + 1
     for (i in 1:n_int) {
         lambda[i] ~ dnGamma(GAMMA_L_SHAPE, gamma_rate_lambda)
-        moves.append( mvSlice(lambda[i], window=0.1, weight=1, search_method="stepping_out") )
+        moves.append( mvScale(lambda[i], lambda=1, weight=1) )
         if (TURNOVER != "none") {
             mu[i] := turnover * lambda[i]
         } else {
             mu[i] ~ dnGamma(GAMMA_M_SHAPE, gamma_rate_mu)
-            moves.append( mvSlice(mu[i], window=0.1, weight=1, search_method="stepping_out") )
+            moves.append( mvScale(mu[i], lambda=1, weight=1) )
         }
         psi[i] ~ dnGamma(GAMMA_P_SHAPE, GAMMA_P_RATE)
-        moves.append( mvSlice(psi[i], window=0.1, weight=1, search_method="stepping_out") )
+        moves.append( mvScale(psi[i], lambda=1, weight=1) )
     }
 } else {
     lambda ~ dnGamma(GAMMA_L_SHAPE, gamma_rate_lambda)
@@ -50,7 +52,7 @@ if (SKYLINE) {
         mu ~ dnGamma(GAMMA_M_SHAPE, gamma_rate_mu)
     }
     psi ~ dnGamma(GAMMA_P_SHAPE, GAMMA_P_RATE)
-    moves.append( mvScale(lambda, weight=3) )
-    if (TURNOVER == "none") moves.append( mvScale(mu, weight=3) )
-    moves.append( mvScale(psi, weight=3) )
+    moves.append( mvScale(lambda, lambda=1, weight=1) )
+    if (TURNOVER == "none") moves.append( mvScale(mu, lambda=1, weight=1) )
+    moves.append( mvScale(psi, lambda=1, weight=1) )
 }
