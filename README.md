@@ -322,6 +322,16 @@ edge at each multiple of its width, as far back as a tree reaches, so only the w
 A bin straddling `origin_age.max` stops there, so an offset grid has no bin reaching past the
 origin prior. The batch's own grid is written as it always was.
 
+On every grid two intervals are the same or disjoint. With `record.occurrence_intervals:
+{min_width: 1, max_width: 5}` the complete record is also written as
+`occurrences_complete_jitter`, each fossil over an interval of its own: a width drawn from
+Uniform(min_width, max_width), with the fossil's age at a uniform position inside it, clipped at the
+present and at `origin_age.max` as the grids are. Intervals then overlap, and which one a fossil
+gets does not depend on where in it its age lies, which is what the interval density assumes. Only
+the complete record is written this way, since under first/last or presence which occurrence is
+oldest, or which interval holds which, is no longer observable. The draws come after the replicate
+is written, so the batch's other records are the same as without it.
+
 A tree drawn backward from `tree.extant_species` has an origin the prior does not bound, so its
 oldest bins can lie wholly above `origin_age.max`. Such a draw is refused when its oldest rate
 interval declines (mu > lambda), since that interval has no lower age and the tree may never find

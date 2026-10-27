@@ -44,6 +44,9 @@ rate_prior:                        # PyRate's: an independent gamma draw for eac
 record:
   rho:                             # the extant sampling probability. unset, every lineage alive at the
                                    # present is seen, and a run may assume any value
+  occurrence_intervals:            # set both, the complete record is also written as occurrences_complete_jitter:
+    min_width:                     # each fossil over its own interval, of width Uniform(min_width, max_width),
+    max_width:                     # with its age at a uniform position inside, so intervals overlap
   occurrence_bins:
     width:                         # required. occurrence ages are reported to bins of this width,
                                    # with an edge at every multiple of it, as far back as a tree reaches

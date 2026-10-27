@@ -164,6 +164,21 @@ more_grids <- unique(do.call(rbind, c(list(data.frame(w = numeric(0), off = nume
   lapply(BIN_WIDTHS, function(w) data.frame(w = w, off = if (w == 0) 0 else BIN_OFFSETS)))))
 grid_label <- function(w, off) paste0("w", w, if (off != 0) paste0("_o", off))
 
+# Overlapping intervals: each fossil of the complete record also reported over an interval of its
+# own, of width Uniform(min, max), with the age at a uniform position inside it. Which interval is
+# reported then does not depend on where in it the age lies, which is what the interval density
+# assumes, and clipping at the present or AGE_MAX keeps that. Drawn after the replicate is written,
+# so the other records are what they would be without it.
+JITTER_MIN <- cfg_opt("JITTER_MIN", NA); JITTER_MAX <- cfg_opt("JITTER_MAX", NA)
+if (is.na(JITTER_MIN) != is.na(JITTER_MAX) || (!is.na(JITTER_MIN) && !(0 < JITTER_MIN && JITTER_MIN <= JITTER_MAX)))
+  stop("record.occurrence_intervals needs 0 < min_width <= max_width")
+jitter <- function(age) {
+  w <- runif(length(age), JITTER_MIN, JITTER_MAX)
+  u <- runif(length(age))
+  lo <- age - u * w
+  list(min = pmax(lo, PRESENT), max = ifelse(lo < AGE_MAX, pmin(age + (1 - u) * w, AGE_MAX), age + (1 - u) * w))
+}
+
 # An age's cell on a grid, (lower, upper] as paleobuddy's are. The grid stops at PRESENT, and a
 # bin straddling AGE_MAX stops there, which the analysis knows anyway, so an offset grid has no
 # bin reaching past the origin prior. Bins wholly above it, which only a tree drawn backward from
@@ -1037,6 +1052,20 @@ simulate_set <- function(n_key, reps, rates, age, base_dir,
                     col.names = TRUE, row.names = FALSE, quote = FALSE, sep = "\t")
       }
     }
+
+    # the complete record over overlapping intervals; under first/last or presence which
+    # occurrence is oldest, or which interval holds which, is no longer observable
+    if (sbc && !is.na(JITTER_MIN)) {
+      s <- specs[["complete"]]
+      occ <- s$min_age != s$max_age
+      cell <- jitter(s$age[occ])
+      s$min_age[occ] <- cell$min
+      s$max_age[occ] <- cell$max
+      jitter_dir <- paste0(base_dir, "/occurrences_complete_jitter")
+      smart_dir_create(jitter_dir)
+      write.table(s[, 1:4], paste0(jitter_dir, "/taxa_", rep, ".tsv"),
+                  col.names = TRUE, row.names = FALSE, quote = FALSE, sep = "\t")
+    }
     
     # characters, as NEXUS for readDiscreteCharacterData
     if (!is.null(sim_rep$CHARS)) {
@@ -1193,6 +1222,9 @@ if (!exists("sim_functions_only")) {
   }
   if (ANAGENESIS) {
     keys <- c(keys, "ANAGENESIS"); vals <- c(vals, "true")
+  }
+  if (!is.na(JITTER_MIN)) {
+    keys <- c(keys, "JITTER_MIN", "JITTER_MAX"); vals <- c(vals, JITTER_MIN, JITTER_MAX)
   }
   if (is.finite(MAX_LINEAGES)) {
     keys <- c(keys, "MAX_LINEAGES"); vals <- c(vals, MAX_LINEAGES)

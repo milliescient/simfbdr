@@ -38,6 +38,11 @@ BATCH_SETTINGS = [
      "occurrence ages are reported to bins of this width, edges at every multiple of it without end"),
     ("BIN_WIDTHS", "record.occurrence_bins.also_widths",
      "the same record on other grids too, as occurrences_<model>_w<width>; 0 is the exact ages"),
+    ("JITTER_MIN", "record.occurrence_intervals.min_width",
+     "set with max_width, the complete record is also written as occurrences_complete_jitter, each "
+     "fossil reported over its own interval of width Uniform(min_width, max_width) holding its age "
+     "at a uniform position, so intervals overlap"),
+    ("JITTER_MAX", "record.occurrence_intervals.max_width", ""),
     ("BIN_OFFSETS", "record.occurrence_bins.also_offsets",
      "each of those shifted by this fraction of a bin as well, as ..._o<offset>"),
 
