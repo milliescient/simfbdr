@@ -69,6 +69,8 @@ if (taxa.size() > 1) {
 # an anagenetic event is a sampled ancestor, which the initial tree holds none of
 if (ANAGENESIS) {
     moves.append( mvCollapseExpandFossilBranch(tr, origin, weight=taxa.size()/5) )
+    # regrafts a subtree at a new age or onto a fossil, which mixes the anagenetic events with the topology
+    moves.append( mvWilsonBalding(tr, weight=taxa.size()) )
 }
 # the first and last appearances, which the tree does not carry
 moves.append( mvStratigraphicRange(tr, weight=taxa.size()) )
