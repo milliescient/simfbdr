@@ -180,7 +180,8 @@ rate_stats <- function(mf, ids, logs) {
 latent_stats <- function(mf, ids) {
   from <- list()
   sim_dir <- mf$batch_dir
-  present <- if (is.null(mf$PRESENT)) 0 else as.numeric(mf$PRESENT)
+  present <- suppressWarnings(as.numeric(mf$PRESENT))   # "none" when the batch sets no present
+  if (!length(present) || is.na(present)) present <- 0
   status_is_data <- is.null(mf$RHO) || as.numeric(mf$RHO) == 1
   nonext <- is_nonextended(mf)
   load(file.path(sim_dir, "sim_list.RData"))   # -> sims
