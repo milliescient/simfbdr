@@ -77,6 +77,9 @@ BATCH_SETTINGS = [
     ("EPS_A", "characters.epsilon_prior.alpha",
      "epsilon ~ Beta(alpha, beta), drawn per replicate: each character's chance to change at a speciation"),
     ("EPS_B", "characters.epsilon_prior.beta", ""),
+    ("CHAR_VARIABLE", "characters.variable_only",
+     "keep only characters that vary among the reported taxa, as a published matrix does: each "
+     "invariant one is drawn again along the same history until it varies, so the count is kept"),
 
     ("MAX_LINEAGES", "simulation_limits.max_expected_lineages",
      "a draw expected to bear more lineages than this is refused unsimulated, which truncates the prior"),
@@ -97,6 +100,9 @@ RUN_SETTINGS = [
      "estimate the anagenetic rate lambda_a; false analyzes the data as pure budding. fbdsp only"),
     ("CHARS", "inference.characters",
      "analyze the batch's characters under dnPhyloMorphospeciation, estimating epsilon; fbdsp only"),
+    ("CODING", "inference.character_coding",
+     "all: the characters are every one simulated; variable: each is conditioned on varying, "
+     "which a batch with characters.variable_only needs"),
     ("AGES", "inference.occurrence_ages",
      "reported: the bins as they are; midpoint: each at its bin's middle; drawn: each uniform in its bin"),
     ("AGE_DRAWS", "inference.age_draws",
@@ -149,6 +155,7 @@ RUN_REQUIRED = ["MODEL", "REPORTING", "INFER", "COND", "RHO", "GENS", "PRINTGEN"
 CHOICES = {"RANGE_START": ("origination", "divergence"), "MODEL": ("fbdrp", "bds", "fbdsp"),
            "INFER": ("complete", "firstlast", "presence"),
            "PSI_MIX": ("true", "false"), "CHARS": ("true", "false"),
+           "CHAR_VARIABLE": ("true", "false"), "CODING": ("all", "variable"),
            "MIX_MODEL": ("gamma", "invisible"),
            "ANAGENESIS": ("true", "false"), "ANA": ("true", "false"),
            "COND": ("time", "sampling", "survival", "nTaxa"),

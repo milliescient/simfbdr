@@ -73,6 +73,7 @@ characters:                        # unset, no characters are simulated
   epsilon_prior:                   # epsilon ~ Beta(alpha, beta), drawn per replicate. At each speciation,
     alpha: 1                       # each character of the new species changes with probability epsilon,
     beta: 9                        # to a state drawn uniformly from the others
+  variable_only: false             # true redraws each character invariant among the reported taxa until it varies
 
 simulation_limits:
   max_expected_lineages:           # no ceiling

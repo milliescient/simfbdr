@@ -256,6 +256,7 @@ if (N_CHARS > 0) {
     stop("characters.states must be one number or one per character, each from 2 to 10")
 }
 EPS_A <- cfg_opt("EPS_A", 1); EPS_B <- cfg_opt("EPS_B", 9)
+CHAR_VARIABLE <- Sys.getenv("CHAR_VARIABLE", "false") == "true"
 
 # Anagenesis: each lineage also splits into a new species at rate lambda_a, drawn per replicate
 # from the speciation prior and constant in time. Off, nothing extra is drawn.
@@ -417,6 +418,21 @@ draw_characters <- function(par, epsilon) {
     for (c in which(runif(N_CHARS) < epsilon)) {
       x[i, c] <- (x[i, c] + sample.int(CHAR_STATES[c] - 1, 1)) %% CHAR_STATES[c]
     }
+  }
+  x
+}
+
+# One character drawn again down the same true tree, as draw_characters draws each
+draw_character <- function(par, epsilon, c) {
+  n <- length(par)
+  x <- integer(n)
+  for (i in seq_len(n)) {
+    if (is.na(par[i])) {
+      x[i] <- sample.int(CHAR_STATES[c], 1) - 1L
+      next
+    }
+    x[i] <- x[par[i]]
+    if (runif(1) < epsilon) x[i] <- (x[i] + sample.int(CHAR_STATES[c] - 1, 1)) %% CHAR_STATES[c]
   }
   x
 }
@@ -867,6 +883,17 @@ simulate_rep <- function(rates, age, shifts,
     k <- as.integer(sub("^t", "", unique(specs[[1]]$taxon)))
     chars <- x[k, , drop = FALSE]
     rownames(chars) <- paste0("t", k)
+    # each character conditioned on varying among the reported taxa, drawn after every other draw
+    if (CHAR_VARIABLE && length(k) > 1) {
+      for (c in seq_len(N_CHARS)) {
+        tries <- 0
+        while (length(unique(chars[, c])) < 2) {
+          tries <- tries + 1
+          if (tries > 1e5) stop("a character stayed invariant over 1e5 draws, so it cannot be conditioned on varying")
+          chars[, c] <- draw_character(sim$PAR, th$epsilon, c)[k]
+        }
+      }
+    }
   }
 
   # paleobuddy indexes intervals oldest-first because its shifts run forward from the origin.
@@ -1219,6 +1246,9 @@ if (!exists("sim_functions_only")) {
   }
   if (N_CHARS > 0) {
     keys <- c(keys, "N_CHARS", "EPS_A", "EPS_B"); vals <- c(vals, N_CHARS, EPS_A, EPS_B)
+    if (CHAR_VARIABLE) {
+      keys <- c(keys, "CHAR_VARIABLE"); vals <- c(vals, "true")
+    }
   }
   if (ANAGENESIS) {
     keys <- c(keys, "ANAGENESIS"); vals <- c(vals, "true")
