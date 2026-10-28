@@ -102,6 +102,8 @@ if (CHARS) {
 }
 
 org  := tr.getOrigin()
+# the anagenetic events; bb cannot count them, since it draws each origination along the stem
+if (ANAGENESIS) nsa := tr.numSampledAncestors()
 # as for infer-fbdrp.Rev, a per-taxon latent is dropped by not creating it
 if (!exists("LATENTS")) LATENTS <- TRUE
 if (LATENTS) {
@@ -122,13 +124,13 @@ if (LATENTS) {
     monitors.append( mnModel(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN) )
 } else if (CHARS && ANAGENESIS) {
     monitors.append( mnFile(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN,
-                            lambda, mu, psi, org, epsilon, lambda_a) )
+                            lambda, mu, psi, org, epsilon, lambda_a, nsa) )
 } else if (CHARS) {
     monitors.append( mnFile(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN,
                             lambda, mu, psi, org, epsilon) )
 } else if (ANAGENESIS) {
     monitors.append( mnFile(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN,
-                            lambda, mu, psi, org, lambda_a) )
+                            lambda, mu, psi, org, lambda_a, nsa) )
 } else {
     monitors.append( mnFile(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN,
                             lambda, mu, psi, org) )
