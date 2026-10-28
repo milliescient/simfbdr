@@ -135,12 +135,16 @@ stats_for <- function(draws, true_vals) {
 
 # lambda_a epsilon_a / (lambda_a epsilon_a + lambda epsilon): a new species differs from its parent in
 # each character with chance epsilon_a after an anagenesis and epsilon after a budding, so this is the
-# share of all character change that is anagenetic. This is S, 0 for change only at budding
+# share of all character change that is anagenetic. This is S, 0 for change only at budding. A is
+# lambda_a / (lambda_a + lambda), the share of speciations that are anagenetic, and needs no characters
 ana_share <- function(d, ni) {
-  if (!all(c("epsilon", "epsilon_a", "lambda_a") %in% names(d))) return(d)
+  if (!"lambda_a" %in% names(d)) return(d)
   for (i in seq_len(ni)) {
+    l <- d[[paste0("lambda[", i, "]")]]
+    d[[paste0("A[", i, "]")]] <- d$lambda_a / (d$lambda_a + l)
+    if (!all(c("epsilon", "epsilon_a") %in% names(d))) next
     a <- d$lambda_a * d$epsilon_a
-    d[[paste0("S[", i, "]")]] <- a / (a + d[[paste0("lambda[", i, "]")]] * d$epsilon)
+    d[[paste0("S[", i, "]")]] <- a / (a + l * d$epsilon)
   }
   d
 }
@@ -166,9 +170,11 @@ rate_stats <- function(mf, ids, logs) {
   # the invisible mixture's weights, a simplex, ranked component by component
   rates <- c(rates, sub("^mix_w\\.(\\d+)\\.$", "mix_w[\\1]", grep("^mix_w\\.\\d+\\.$", names(probe), value = TRUE)))
 
-  # with both chances to change, S: the share of character change that is anagenetic in each interval
+  # with anagenesis, A, and with both chances to change too, S, in each interval
   ni <- as.integer(mf$NINTERVALS)
-  share <- if (all(c("epsilon", "epsilon_a", "lambda_a") %in% names(probe))) paste0("S[", seq_len(ni), "]") else character(0)
+  share <- character(0)
+  if ("lambda_a" %in% names(probe)) share <- paste0("A[", seq_len(ni), "]")
+  if (all(c("epsilon", "epsilon_a", "lambda_a") %in% names(probe))) share <- c(share, paste0("S[", seq_len(ni), "]"))
 
   draws <- Map(function(f) {
     d <- read.table(f, header = TRUE)
