@@ -74,6 +74,9 @@ characters:                        # unset, no characters are simulated
     alpha: 1                       # each character of the new species changes with probability epsilon,
     beta: 9                        # to a state drawn uniformly from the others
   variable_only: false             # true redraws each character invariant among the reported taxa until it varies
+  epsilon_a_prior:                 # epsilon_a ~ Beta(alpha, beta), each character's chance to change at an
+    alpha:                         # anagenetic speciation; unset, anagenesis changes with epsilon
+    beta:
 
 simulation_limits:
   max_expected_lineages:           # no ceiling

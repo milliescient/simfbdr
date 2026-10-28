@@ -77,6 +77,10 @@ BATCH_SETTINGS = [
     ("EPS_A", "characters.epsilon_prior.alpha",
      "epsilon ~ Beta(alpha, beta), drawn per replicate: each character's chance to change at a speciation"),
     ("EPS_B", "characters.epsilon_prior.beta", ""),
+    ("EPSA_A", "characters.epsilon_a_prior.alpha",
+     "epsilon_a ~ Beta(alpha, beta), drawn per replicate: each character's chance to change at an "
+     "anagenetic speciation, epsilon then being budding's alone. Unset, anagenesis changes with epsilon"),
+    ("EPSA_B", "characters.epsilon_a_prior.beta", ""),
     ("CHAR_VARIABLE", "characters.variable_only",
      "keep only characters that vary among the reported taxa, as a published matrix does: each "
      "invariant one is drawn again along the same history until it varies, so the count is kept"),
@@ -100,6 +104,9 @@ RUN_SETTINGS = [
      "estimate the anagenetic rate lambda_a; false analyzes the data as pure budding. fbdsp only"),
     ("CHARS", "inference.characters",
      "analyze the batch's characters under dnPhyloMorphospeciation, estimating epsilon; fbdsp only"),
+    ("EPSILON_A", "inference.epsilon_a",
+     "estimate a separate chance to change at anagenesis, with the batch's epsilon_a prior or else "
+     "epsilon's; needs characters and anagenesis"),
     ("CODING", "inference.character_coding",
      "all: the characters are every one simulated; variable: each is conditioned on varying, "
      "which a batch with characters.variable_only needs"),
@@ -155,7 +162,7 @@ RUN_REQUIRED = ["MODEL", "REPORTING", "INFER", "COND", "RHO", "GENS", "PRINTGEN"
 CHOICES = {"RANGE_START": ("origination", "divergence"), "MODEL": ("fbdrp", "bds", "fbdsp"),
            "INFER": ("complete", "firstlast", "presence"),
            "PSI_MIX": ("true", "false"), "CHARS": ("true", "false"),
-           "CHAR_VARIABLE": ("true", "false"), "CODING": ("all", "variable"),
+           "CHAR_VARIABLE": ("true", "false"), "CODING": ("all", "variable"), "EPSILON_A": ("true", "false"),
            "MIX_MODEL": ("gamma", "invisible"),
            "ANAGENESIS": ("true", "false"), "ANA": ("true", "false"),
            "COND": ("time", "sampling", "survival", "nTaxa"),

@@ -257,6 +257,10 @@ if (N_CHARS > 0) {
 }
 EPS_A <- cfg_opt("EPS_A", 1); EPS_B <- cfg_opt("EPS_B", 9)
 CHAR_VARIABLE <- Sys.getenv("CHAR_VARIABLE", "false") == "true"
+# anagenesis's own chance to change each character; unset, it changes with epsilon as budding does
+EPSA_A <- cfg_opt("EPSA_A", NA); EPSA_B <- cfg_opt("EPSA_B", NA)
+EPS_ANAGENETIC <- !is.na(EPSA_A) || !is.na(EPSA_B)
+if (EPS_ANAGENETIC && (is.na(EPSA_A) || is.na(EPSA_B))) stop("characters.epsilon_a_prior needs alpha and beta")
 
 # Anagenesis: each lineage also splits into a new species at rate lambda_a, drawn per replicate
 # from the speciation prior and constant in time. Off, nothing extra is drawn.
@@ -292,6 +296,7 @@ truth_of <- function(th, lambda, mu, psi, age) {
   if (MIX_MODEL == "invisible") v <- c(v, setNames(th$mix_w, paste0("mix_w", 1:3)), mix_r = th$mix_r)
   if (N_CHARS > 0) v <- c(v, epsilon = th$epsilon)
   if (ANAGENESIS) v <- c(v, lambda_a = th$lambda_a)
+  if (EPS_ANAGENETIC) v <- c(v, epsilon_a = th$epsilon_a)
   v
 }
 
@@ -326,6 +331,7 @@ draw_theta <- function() {
   }
   if (N_CHARS > 0) th$epsilon <- rbeta(1, EPS_A, EPS_B)
   if (ANAGENESIS) th$lambda_a <- rgamma(1, GAMMA_L_SHAPE, rate = b_lambda)
+  if (EPS_ANAGENETIC) th$epsilon_a <- rbeta(1, EPSA_A, EPSA_B)
   th
 }
 
@@ -415,11 +421,22 @@ draw_characters <- function(par, epsilon) {
       next
     }
     x[i, ] <- x[par[i], ]
-    for (c in which(runif(N_CHARS) < epsilon)) {
+    for (c in which(runif(N_CHARS) < epsilon[i])) {
       x[i, c] <- (x[i, c] + sample.int(CHAR_STATES[c] - 1, 1)) %% CHAR_STATES[c]
     }
   }
   x
+}
+
+# Each species' chance to change a character at its own speciation: epsilon_a if it began by anagenesis,
+# where its parent ended, and epsilon otherwise
+change_probabilities <- function(sim, th) {
+  p <- rep(th$epsilon, length(sim$PAR))
+  if (!EPS_ANAGENETIC) return(p)
+  te <- ifelse(is.na(sim$TE), -Inf, sim$TE)
+  ana <- !is.na(sim$PAR) & abs(sim$TS - te[sim$PAR]) < 1e-9
+  p[which(ana)] <- th$epsilon_a
+  p
 }
 
 # One character drawn again down the same true tree, as draw_characters draws each
@@ -432,7 +449,7 @@ draw_character <- function(par, epsilon, c) {
       next
     }
     x[i] <- x[par[i]]
-    if (runif(1) < epsilon) x[i] <- (x[i] + sample.int(CHAR_STATES[c] - 1, 1)) %% CHAR_STATES[c]
+    if (runif(1) < epsilon[i]) x[i] <- (x[i] + sample.int(CHAR_STATES[c] - 1, 1)) %% CHAR_STATES[c]
   }
   x
 }
@@ -879,7 +896,8 @@ simulate_rep <- function(rates, age, shifts,
   # draw costs none, then kept for the reported ones
   chars <- NULL
   if (sbc && N_CHARS > 0) {
-    x <- draw_characters(sim$PAR, th$epsilon)
+    eps <- change_probabilities(sim, th)
+    x <- draw_characters(sim$PAR, eps)
     k <- as.integer(sub("^t", "", unique(specs[[1]]$taxon)))
     chars <- x[k, , drop = FALSE]
     rownames(chars) <- paste0("t", k)
@@ -890,7 +908,7 @@ simulate_rep <- function(rates, age, shifts,
         while (length(unique(chars[, c])) < 2) {
           tries <- tries + 1
           if (tries > 1e5) stop("a character stayed invariant over 1e5 draws, so it cannot be conditioned on varying")
-          chars[, c] <- draw_character(sim$PAR, th$epsilon, c)[k]
+          chars[, c] <- draw_character(sim$PAR, eps, c)[k]
         }
       }
     }
@@ -1248,6 +1266,9 @@ if (!exists("sim_functions_only")) {
     keys <- c(keys, "N_CHARS", "EPS_A", "EPS_B"); vals <- c(vals, N_CHARS, EPS_A, EPS_B)
     if (CHAR_VARIABLE) {
       keys <- c(keys, "CHAR_VARIABLE"); vals <- c(vals, "true")
+    }
+    if (EPS_ANAGENETIC) {
+      keys <- c(keys, "EPSA_A", "EPSA_B"); vals <- c(vals, EPSA_A, EPSA_B)
     }
   }
   if (ANAGENESIS) {

@@ -148,7 +148,7 @@ rate_stats <- function(mf, ids, logs) {
   }
   # so are the psi mixture's shape, the characters' chance to change and the anagenetic rate, when
   # the run estimated them
-  for (h in c("alpha", "epsilon", "lambda_a", "turnover", "mix_r")) {
+  for (h in c("alpha", "epsilon", "epsilon_a", "lambda_a", "turnover", "mix_r")) {
     if (h %in% names(probe)) rates <- c(rates, h)
   }
   # the invisible mixture's weights, a simplex, ranked component by component

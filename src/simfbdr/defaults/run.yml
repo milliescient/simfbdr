@@ -35,6 +35,8 @@ inference:
                                 # estimates epsilon. fbdsp only
   character_coding: all         # variable conditions each character on varying, for a batch with
                                 # characters.variable_only
+  epsilon_a: false              # true estimates a separate chance to change at anagenesis. fbdsp with
+                                # characters and anagenesis only
 
 mcmc:
   generations:                  # required

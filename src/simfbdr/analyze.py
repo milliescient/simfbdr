@@ -155,6 +155,8 @@ def analyze(run, force=False, jobs=1, slots=None, slot_dir=None):
         die(f"{rcfg} asks for the characters, and {batch} simulated none.")
     if r.get("CODING", "all") == "variable" and r["CHARS"] != "true":
         die(f"{rcfg} asks for variable character coding, and analyzes no characters.")
+    if r.get("EPSILON_A", "false") == "true" and (r["CHARS"] != "true" or r["ANA"] != "true"):
+        die(f"{rcfg} asks for epsilon_a, a chance to change at anagenesis, which needs characters and anagenesis.")
     if r["ANA"] == "true" and r["MODEL"] != "fbdsp":
         die(f"{rcfg} asks for anagenesis, which only the tree process has: model fbdsp.")
     if r["ANA"] == "true" and b.get("ANAGENESIS") != "true":
@@ -261,7 +263,10 @@ def analyze(run, force=False, jobs=1, slots=None, slot_dir=None):
             charfile = absolute(os.path.join(batch, "characters", f"characters_{rep}.nex"))
             head += [f'CHARFILE <- "{charfile}"', f"NSTATES <- v({', '.join(states)})",
                      f"EPS_A <- {b.get('EPS_A', 1)}", f"EPS_B <- {b.get('EPS_B', 9)}",
-                     f'CODING <- "{r.get("CODING", "all")}"']
+                     f'CODING <- "{r.get("CODING", "all")}"',
+                     # anagenesis's own chance to change: the batch's prior for it, or else epsilon's
+                     f"EPSILON_A <- {r.get('EPSILON_A', 'false')}",
+                     f"EPSA_A <- {b.get('EPSA_A') or b.get('EPS_A', 1)}", f"EPSA_B <- {b.get('EPSA_B') or b.get('EPS_B', 9)}"]
         head += [f'BINDIR <- "{tools.SCRIPTS}"'] + treated
         head += [f'source("{template}")']
         rev = os.path.join(work, f"run_{rep}.Rev")
