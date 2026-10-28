@@ -133,6 +133,18 @@ stats_for <- function(draws, true_vals) {
                            thin_ranks = thin_ranks_opt)
 }
 
+# lambda_a epsilon_a / (lambda_a epsilon_a + lambda epsilon): a new species differs from its parent in
+# each character with chance epsilon_a after an anagenesis and epsilon after a budding, so this is the
+# share of all character change that is anagenetic. This is S, 0 for change only at budding
+ana_share <- function(d, ni) {
+  if (!all(c("epsilon", "epsilon_a", "lambda_a") %in% names(d))) return(d)
+  for (i in seq_len(ni)) {
+    a <- d$lambda_a * d$epsilon_a
+    d[[paste0("S[", i, "]")]] <- a / (a + d[[paste0("lambda[", i, "]")]] * d$epsilon)
+  }
+  d
+}
+
 # the skyline rates, one value per replicate
 rate_stats <- function(mf, ids, logs) {
   sim_dir <- mf$batch_dir
@@ -154,6 +166,10 @@ rate_stats <- function(mf, ids, logs) {
   # the invisible mixture's weights, a simplex, ranked component by component
   rates <- c(rates, sub("^mix_w\\.(\\d+)\\.$", "mix_w[\\1]", grep("^mix_w\\.\\d+\\.$", names(probe), value = TRUE)))
 
+  # with both chances to change, S: the share of character change that is anagenetic in each interval
+  ni <- as.integer(mf$NINTERVALS)
+  share <- if (all(c("epsilon", "epsilon_a", "lambda_a") %in% names(probe))) paste0("S[", seq_len(ni), "]") else character(0)
+
   draws <- Map(function(f) {
     d <- read.table(f, header = TRUE)
     colnames(d) <- gsub("\\[$", "]", gsub("\\.", "[", colnames(d)))
@@ -164,16 +180,17 @@ rate_stats <- function(mf, ids, logs) {
         if (a %in% colnames(d)) colnames(d)[colnames(d) == a] <- paste0(a, "[1]")
       }
     }
-    posterior::as_draws_matrix(d[post_burnin(nrow(d)), rates])
+    d <- ana_share(d, ni)
+    posterior::as_draws_matrix(d[post_burnin(nrow(d)), c(rates, share)])
   }, logs)
 
   true_vals <- read.table(file.path(sim_dir, "true_vals.tsv"), header = TRUE)
   colnames(true_vals) <- gsub("(\\D+)(\\d+)$", "\\1[\\2]", colnames(true_vals))
   names(true_vals)[names(true_vals) == "age"] <- "org"
-  ni <- as.integer(mf$NINTERVALS)
   true_vals <- align_skyline_index(true_vals, ni, truth_order_of(mf))
   check_alignment(draws, true_vals, ni, ids)
-  stats_for(draws, posterior::as_draws_matrix(true_vals[ids, rates]))
+  if (length(share)) true_vals <- ana_share(true_vals, ni)
+  stats_for(draws, posterior::as_draws_matrix(true_vals[ids, c(rates, share)]))
 }
 
 # b, d and tau1, one extinct taxon per replicate. Returns NULL if nothing usable was logged.
