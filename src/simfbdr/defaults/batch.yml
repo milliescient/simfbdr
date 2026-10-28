@@ -77,6 +77,9 @@ characters:                        # unset, no characters are simulated
   epsilon_a_prior:                 # epsilon_a ~ Beta(alpha, beta), each character's chance to change at an
     alpha:                         # anagenetic speciation; unset, anagenesis changes with epsilon
     beta:
+  retention_prior:                 # retention ~ Beta(alpha, beta): set, keep only characters informative among the
+    alpha:                         # reported taxa, and each varying only by autapomorphies with probability retention
+    beta:
 
 simulation_limits:
   max_expected_lineages:           # no ceiling

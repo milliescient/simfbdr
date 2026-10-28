@@ -84,6 +84,11 @@ BATCH_SETTINGS = [
     ("CHAR_VARIABLE", "characters.variable_only",
      "keep only characters that vary among the reported taxa, as a published matrix does: each "
      "invariant one is drawn again along the same history until it varies, so the count is kept"),
+    ("RET_A", "characters.retention_prior.alpha",
+     "keep only characters that are parsimony informative among the reported taxa, and each varying "
+     "only by autapomorphies with probability retention ~ Beta(alpha, beta), drawn per replicate. A "
+     "character dropped is drawn again along the same history, as for variable_only"),
+    ("RET_B", "characters.retention_prior.beta", ""),
 
     ("MAX_LINEAGES", "simulation_limits.max_expected_lineages",
      "a draw expected to bear more lineages than this is refused unsimulated, which truncates the prior"),
@@ -109,7 +114,11 @@ RUN_SETTINGS = [
      "epsilon's; needs characters and anagenesis"),
     ("CODING", "inference.character_coding",
      "all: the characters are every one simulated; variable: each is conditioned on varying, "
-     "which a batch with characters.variable_only needs"),
+     "which a batch with characters.variable_only needs; informative: each is conditioned on "
+     "being parsimony informative"),
+    ("RETENTION", "inference.retention",
+     "with informative coding, estimate the chance a character varying only by autapomorphies was "
+     "kept, with the batch's retention prior"),
     ("AGES", "inference.occurrence_ages",
      "reported: the bins as they are; midpoint: each at its bin's middle; drawn: each uniform in its bin"),
     ("AGE_DRAWS", "inference.age_draws",
@@ -162,7 +171,8 @@ RUN_REQUIRED = ["MODEL", "REPORTING", "INFER", "COND", "RHO", "GENS", "PRINTGEN"
 CHOICES = {"RANGE_START": ("origination", "divergence"), "MODEL": ("fbdrp", "bds", "fbdsp"),
            "INFER": ("complete", "firstlast", "presence"),
            "PSI_MIX": ("true", "false"), "CHARS": ("true", "false"),
-           "CHAR_VARIABLE": ("true", "false"), "CODING": ("all", "variable"), "EPSILON_A": ("true", "false"),
+           "CHAR_VARIABLE": ("true", "false"), "CODING": ("all", "variable", "informative"), "EPSILON_A": ("true", "false"),
+           "RETENTION": ("true", "false"),
            "MIX_MODEL": ("gamma", "invisible"),
            "ANAGENESIS": ("true", "false"), "ANA": ("true", "false"),
            "COND": ("time", "sampling", "survival", "nTaxa"),

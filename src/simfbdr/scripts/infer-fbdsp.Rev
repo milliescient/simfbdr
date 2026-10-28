@@ -7,7 +7,7 @@
 ###
 ### Set before sourcing: rep, SKYLINE, REPORTING, COND, RHO, RANGE_START, GENS, PRINTGEN,
 ###   OCCURRENCES, BATCHDIR, OUTDIR, the GAMMA_ settings, AGE_MIN, AGE_MAX, ORIGIN_PRIOR, MAXFA,
-###   ANAGENESIS, CHARS, and with CHARS: CHARFILE, NSTATES, EPS_A, EPS_B, CODING, EPSILON_A, EPSA_A, EPSA_B, and as for mixture-prior.Rev
+###   ANAGENESIS, CHARS, and with CHARS: CHARFILE, NSTATES, EPS_A, EPS_B, CODING, EPSILON_A, EPSA_A, EPSA_B, RETENTION, RET_A, RET_B, and as for mixture-prior.Rev
 
 # TAXA is set when the run treats the occurrence ages some other way than as reported
 if (!exists("TAXA")) TAXA <- BATCHDIR + "/" + OCCURRENCES + "/taxa_" + rep + ".tsv"
@@ -103,9 +103,21 @@ if (CHARS) {
     if (EPSILON_A) {
         epsilon_a ~ dnBeta(EPSA_A, EPSA_B)
         moves.append( mvSlide(epsilon_a, delta=0.05, weight=5) )
+    }
+    # with informative coding, each character varying only by autapomorphies was kept with probability retention
+    if (!exists("RETENTION")) RETENTION <- false
+    if (RETENTION) {
+        retention ~ dnBeta(RET_A, RET_B)
+        moves.append( mvSlide(retention, delta=0.1, weight=5) )
+    }
+    if (EPSILON_A && RETENTION) {
+        morph ~ dnPhyloMorphospeciation(tree=tr, nStates=NSTATES, epsilon=epsilon, epsilon_a=epsilon_a, coding=CODING, retention=retention)
+    } else if (EPSILON_A) {
         morph ~ dnPhyloMorphospeciation(tree=tr, nStates=NSTATES, epsilon=epsilon, epsilon_a=epsilon_a, coding=CODING)
-    } else if (CODING == "variable") {
-        morph ~ dnPhyloMorphospeciation(tree=tr, nStates=NSTATES, epsilon=epsilon, coding="variable")
+    } else if (RETENTION) {
+        morph ~ dnPhyloMorphospeciation(tree=tr, nStates=NSTATES, epsilon=epsilon, coding=CODING, retention=retention)
+    } else if (CODING != "all") {
+        morph ~ dnPhyloMorphospeciation(tree=tr, nStates=NSTATES, epsilon=epsilon, coding=CODING)
     } else {
         morph ~ dnPhyloMorphospeciation(tree=tr, nStates=NSTATES, epsilon=epsilon)
     }
@@ -132,8 +144,13 @@ if (LATENTS) {
 
 mymodel = model(tr)
 monitors = VectorMonitors()
+if (!exists("EPSILON_A")) EPSILON_A <- false
+if (!exists("RETENTION")) RETENTION <- false
 if (LATENTS) {
     monitors.append( mnModel(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN) )
+} else if (CHARS && ANAGENESIS && EPSILON_A && RETENTION) {
+    monitors.append( mnFile(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN,
+                            lambda, mu, psi, org, epsilon, epsilon_a, retention, lambda_a, nsa) )
 } else if (CHARS && ANAGENESIS && EPSILON_A) {
     monitors.append( mnFile(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN,
                             lambda, mu, psi, org, epsilon, epsilon_a, lambda_a, nsa) )

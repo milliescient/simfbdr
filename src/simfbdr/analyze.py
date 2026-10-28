@@ -153,8 +153,12 @@ def analyze(run, force=False, jobs=1, slots=None, slot_dir=None):
         die(f"{rcfg} asks for the characters, which need the tree process: model fbdsp.")
     if r["CHARS"] == "true" and not b.get("N_CHARS"):
         die(f"{rcfg} asks for the characters, and {batch} simulated none.")
-    if r.get("CODING", "all") == "variable" and r["CHARS"] != "true":
-        die(f"{rcfg} asks for variable character coding, and analyzes no characters.")
+    if r.get("CODING", "all") != "all" and r["CHARS"] != "true":
+        die(f"{rcfg} asks for {r['CODING']} character coding, and analyzes no characters.")
+    if r.get("RETENTION", "false") == "true" and r.get("CODING", "all") != "informative":
+        die(f"{rcfg} asks for retention, which needs character_coding informative.")
+    if r.get("RETENTION", "false") == "true" and not b.get("RET_A"):
+        die(f"{rcfg} asks for retention, and {batch} was simulated without a retention prior.")
     if r.get("EPSILON_A", "false") == "true" and (r["CHARS"] != "true" or r["ANA"] != "true"):
         die(f"{rcfg} asks for epsilon_a, a chance to change at anagenesis, which needs characters and anagenesis.")
     if r["ANA"] == "true" and r["MODEL"] != "fbdsp":
@@ -266,7 +270,9 @@ def analyze(run, force=False, jobs=1, slots=None, slot_dir=None):
                      f'CODING <- "{r.get("CODING", "all")}"',
                      # anagenesis's own chance to change: the batch's prior for it, or else epsilon's
                      f"EPSILON_A <- {r.get('EPSILON_A', 'false')}",
-                     f"EPSA_A <- {b.get('EPSA_A') or b.get('EPS_A', 1)}", f"EPSA_B <- {b.get('EPSA_B') or b.get('EPS_B', 9)}"]
+                     f"EPSA_A <- {b.get('EPSA_A') or b.get('EPS_A', 1)}", f"EPSA_B <- {b.get('EPSA_B') or b.get('EPS_B', 9)}",
+                     f"RETENTION <- {r.get('RETENTION', 'false')}",
+                     f"RET_A <- {b.get('RET_A') or 1}", f"RET_B <- {b.get('RET_B') or 1}"]
         head += [f'BINDIR <- "{tools.SCRIPTS}"'] + treated
         head += [f'source("{template}")']
         rev = os.path.join(work, f"run_{rep}.Rev")

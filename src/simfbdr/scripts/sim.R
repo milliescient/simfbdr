@@ -261,6 +261,10 @@ CHAR_VARIABLE <- Sys.getenv("CHAR_VARIABLE", "false") == "true"
 EPSA_A <- cfg_opt("EPSA_A", NA); EPSA_B <- cfg_opt("EPSA_B", NA)
 EPS_ANAGENETIC <- !is.na(EPSA_A) || !is.na(EPSA_B)
 if (EPS_ANAGENETIC && (is.na(EPSA_A) || is.na(EPSA_B))) stop("characters.epsilon_a_prior needs alpha and beta")
+# keep only informative characters, and each varying only by autapomorphies with probability retention
+RET_A <- cfg_opt("RET_A", NA); RET_B <- cfg_opt("RET_B", NA)
+CHAR_RETENTION <- !is.na(RET_A) || !is.na(RET_B)
+if (CHAR_RETENTION && (is.na(RET_A) || is.na(RET_B))) stop("characters.retention_prior needs alpha and beta")
 
 # Anagenesis: each lineage also splits into a new species at rate lambda_a, drawn per replicate
 # from the speciation prior and constant in time. Off, nothing extra is drawn.
@@ -297,6 +301,7 @@ truth_of <- function(th, lambda, mu, psi, age) {
   if (N_CHARS > 0) v <- c(v, epsilon = th$epsilon)
   if (ANAGENESIS) v <- c(v, lambda_a = th$lambda_a)
   if (EPS_ANAGENETIC) v <- c(v, epsilon_a = th$epsilon_a)
+  if (CHAR_RETENTION) v <- c(v, retention = th$retention)
   v
 }
 
@@ -332,6 +337,7 @@ draw_theta <- function() {
   if (N_CHARS > 0) th$epsilon <- rbeta(1, EPS_A, EPS_B)
   if (ANAGENESIS) th$lambda_a <- rgamma(1, GAMMA_L_SHAPE, rate = b_lambda)
   if (EPS_ANAGENETIC) th$epsilon_a <- rbeta(1, EPSA_A, EPSA_B)
+  if (CHAR_RETENTION) th$retention <- rbeta(1, RET_A, RET_B)
   th
 }
 
@@ -901,13 +907,20 @@ simulate_rep <- function(rates, age, shifts,
     k <- as.integer(sub("^t", "", unique(specs[[1]]$taxon)))
     chars <- x[k, , drop = FALSE]
     rownames(chars) <- paste0("t", k)
-    # each character conditioned on varying among the reported taxa, drawn after every other draw
-    if (CHAR_VARIABLE && length(k) > 1) {
+    # each character conditioned on varying among the reported taxa, or on being informative there or else
+    # kept with probability retention, drawn after every other draw. Each draw is tested once
+    kept <- function(x) {
+      n <- table(x)
+      if (length(n) < 2) return(FALSE)
+      if (!CHAR_RETENTION || sum(n > 1) > 1) return(TRUE)
+      runif(1) < th$retention
+    }
+    if ((CHAR_VARIABLE || CHAR_RETENTION) && length(k) > 1) {
       for (c in seq_len(N_CHARS)) {
         tries <- 0
-        while (length(unique(chars[, c])) < 2) {
+        while (!kept(chars[, c])) {
           tries <- tries + 1
-          if (tries > 1e5) stop("a character stayed invariant over 1e5 draws, so it cannot be conditioned on varying")
+          if (tries > 1e5) stop("a character was dropped over 1e5 draws, so it cannot be conditioned on being kept")
           chars[, c] <- draw_character(sim$PAR, eps, c)[k]
         }
       }
@@ -1269,6 +1282,9 @@ if (!exists("sim_functions_only")) {
     }
     if (EPS_ANAGENETIC) {
       keys <- c(keys, "EPSA_A", "EPSA_B"); vals <- c(vals, EPSA_A, EPSA_B)
+    }
+    if (CHAR_RETENTION) {
+      keys <- c(keys, "RET_A", "RET_B"); vals <- c(vals, RET_A, RET_B)
     }
   }
   if (ANAGENESIS) {

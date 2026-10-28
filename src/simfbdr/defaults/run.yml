@@ -34,7 +34,9 @@ inference:
   characters: false             # true adds the batch's characters under dnPhyloMorphospeciation and
                                 # estimates epsilon. fbdsp only
   character_coding: all         # variable conditions each character on varying, for a batch with
-                                # characters.variable_only
+                                # characters.variable_only; informative on being parsimony informative
+  retention: false              # true estimates, with informative coding, the chance a character varying
+                                # only by autapomorphies was kept, for a batch with characters.retention_prior
   epsilon_a: false              # true estimates a separate chance to change at anagenesis. fbdsp with
                                 # characters and anagenesis only
 
