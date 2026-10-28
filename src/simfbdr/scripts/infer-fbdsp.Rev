@@ -96,7 +96,13 @@ if (CHARS) {
     morpho <- readDiscreteCharacterData(CHARFILE)
     epsilon ~ dnBeta(EPS_A, EPS_B)
     moves.append( mvSlide(epsilon, delta=0.05, weight=5) )
-    morph ~ dnPhyloMorphospeciation(tree=tr, nStates=NSTATES, epsilon=epsilon)
+    # a matrix of variable characters only conditions each on varying; an rb before the option never sees it
+    if (!exists("CODING")) CODING <- "all"
+    if (CODING == "variable") {
+        morph ~ dnPhyloMorphospeciation(tree=tr, nStates=NSTATES, epsilon=epsilon, coding="variable")
+    } else {
+        morph ~ dnPhyloMorphospeciation(tree=tr, nStates=NSTATES, epsilon=epsilon)
+    }
     morph.clamp(morpho)
     moves.append( mvMorphospeciationEvents(morph, weight=2*taxa.size()/5) )
 }
