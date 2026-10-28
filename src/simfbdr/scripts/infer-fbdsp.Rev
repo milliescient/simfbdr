@@ -7,7 +7,7 @@
 ###
 ### Set before sourcing: rep, SKYLINE, REPORTING, COND, RHO, RANGE_START, GENS, PRINTGEN,
 ###   OCCURRENCES, BATCHDIR, OUTDIR, the GAMMA_ settings, AGE_MIN, AGE_MAX, ORIGIN_PRIOR, MAXFA,
-###   ANAGENESIS, CHARS, and with CHARS: CHARFILE, NSTATES, EPS_A, EPS_B, and as for mixture-prior.Rev
+###   ANAGENESIS, CHARS, and with CHARS: CHARFILE, NSTATES, EPS_A, EPS_B, CODING, EPSILON_A, EPSA_A, EPSA_B, and as for mixture-prior.Rev
 
 # TAXA is set when the run treats the occurrence ages some other way than as reported
 if (!exists("TAXA")) TAXA <- BATCHDIR + "/" + OCCURRENCES + "/taxa_" + rep + ".tsv"
@@ -98,7 +98,13 @@ if (CHARS) {
     moves.append( mvSlide(epsilon, delta=0.05, weight=5) )
     # a matrix of variable characters only conditions each on varying; an rb before the option never sees it
     if (!exists("CODING")) CODING <- "all"
-    if (CODING == "variable") {
+    # an anagenesis changes each character with its own probability epsilon_a
+    if (!exists("EPSILON_A")) EPSILON_A <- false
+    if (EPSILON_A) {
+        epsilon_a ~ dnBeta(EPSA_A, EPSA_B)
+        moves.append( mvSlide(epsilon_a, delta=0.05, weight=5) )
+        morph ~ dnPhyloMorphospeciation(tree=tr, nStates=NSTATES, epsilon=epsilon, epsilon_a=epsilon_a, coding=CODING)
+    } else if (CODING == "variable") {
         morph ~ dnPhyloMorphospeciation(tree=tr, nStates=NSTATES, epsilon=epsilon, coding="variable")
     } else {
         morph ~ dnPhyloMorphospeciation(tree=tr, nStates=NSTATES, epsilon=epsilon)
@@ -128,6 +134,9 @@ mymodel = model(tr)
 monitors = VectorMonitors()
 if (LATENTS) {
     monitors.append( mnModel(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN) )
+} else if (CHARS && ANAGENESIS && EPSILON_A) {
+    monitors.append( mnFile(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN,
+                            lambda, mu, psi, org, epsilon, epsilon_a, lambda_a, nsa) )
 } else if (CHARS && ANAGENESIS) {
     monitors.append( mnFile(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN,
                             lambda, mu, psi, org, epsilon, lambda_a, nsa) )
