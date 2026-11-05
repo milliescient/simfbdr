@@ -27,7 +27,10 @@ if (ORIGIN_PRIOR == "exponential") {
     origin ~ dnUniform(AGE_MIN, AGE_MAX)
 }
 origin.setValue(AGE_MAX)
-moves.append( mvSlide(origin, delta=1, weight=2) )
+# Measured at four widths down to 0, this move accepts 0.31 to 0.37 on some replicates, under
+# mvSlide's 0.44 target whatever delta is. Tuning then only divides, 0.833 an interval, and it stops
+# at the end of burn-in, so the run inherits a delta too small to move the origin at all.
+moves.append( mvSlide(origin, delta=1, weight=2, tune=false) )
 
 # The anagenetic rate is constant in time and drawn from the speciation prior, as the batch drew
 # it. Without anagenesis it is zero, which is pure budding.
