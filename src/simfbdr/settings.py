@@ -89,6 +89,12 @@ BATCH_SETTINGS = [
      "only by autapomorphies with probability retention ~ Beta(alpha, beta), drawn per replicate. A "
      "character dropped is drawn again along the same history, as for variable_only"),
     ("RET_B", "characters.retention_prior.beta", ""),
+    ("CHAR_MODEL", "characters.model",
+     "morphospeciation: each character changes only at speciation, with probability epsilon; mk: instead "
+     "along each lineage in time, under Mk at a rate drawn per replicate"),
+    ("MKR_SHAPE", "characters.rate_prior.shape",
+     "mk: the rate ~ Gamma(shape, rate), in expected changes per character per unit time"),
+    ("MKR_RATE", "characters.rate_prior.rate", ""),
 
     ("MAX_LINEAGES", "simulation_limits.max_expected_lineages",
      "a draw expected to bear more lineages than this is refused unsimulated, which truncates the prior"),
@@ -119,6 +125,12 @@ RUN_SETTINGS = [
     ("RETENTION", "inference.retention",
      "with informative coding, estimate the chance a character varying only by autapomorphies was "
      "kept, with the batch's retention prior"),
+    ("CHAR_INFER", "inference.character_model",
+     "morphospeciation: the characters under dnPhyloMorphospeciation; mk: under dnPhyloCTMC on the same "
+     "tree, at a strict clock rate, whichever model the batch simulated"),
+    ("MKI_SHAPE", "inference.character_rate_prior.shape",
+     "mk: the rate's prior, Gamma(shape, rate). Left out, the batch's characters.rate_prior"),
+    ("MKI_RATE", "inference.character_rate_prior.rate", ""),
     ("AGES", "inference.occurrence_ages",
      "reported: the bins as they are; midpoint: each at its bin's middle; drawn: each uniform in its bin"),
     ("AGE_DRAWS", "inference.age_draws",
@@ -171,7 +183,8 @@ RUN_REQUIRED = ["MODEL", "REPORTING", "INFER", "COND", "RHO", "GENS", "PRINTGEN"
 CHOICES = {"RANGE_START": ("origination", "divergence"), "MODEL": ("fbdrp", "bds", "fbdsp"),
            "INFER": ("complete", "firstlast", "presence"),
            "PSI_MIX": ("true", "false"), "CHARS": ("true", "false"),
-           "CHAR_VARIABLE": ("true", "false"), "CODING": ("all", "variable", "informative"), "EPSILON_A": ("true", "false"),
+           "CHAR_VARIABLE": ("true", "false"), "CODING": ("all", "variable", "informative"),
+           "CHAR_MODEL": ("morphospeciation", "mk"), "CHAR_INFER": ("morphospeciation", "mk"), "EPSILON_A": ("true", "false"),
            "RETENTION": ("true", "false"),
            "MIX_MODEL": ("gamma", "invisible"),
            "ANAGENESIS": ("true", "false"), "ANA": ("true", "false"),

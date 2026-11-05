@@ -164,7 +164,7 @@ rate_stats <- function(mf, ids, logs) {
   }
   # so are the psi mixture's shape, the characters' chance to change and the anagenetic rate, when
   # the run estimated them
-  for (h in c("alpha", "epsilon", "epsilon_a", "lambda_a", "retention", "turnover", "mix_r")) {
+  for (h in c("alpha", "epsilon", "epsilon_a", "lambda_a", "retention", "char_rate", "turnover", "mix_r")) {
     if (h %in% names(probe)) rates <- c(rates, h)
   }
   # the invisible mixture's weights, a simplex, ranked component by component
@@ -175,6 +175,14 @@ rate_stats <- function(mf, ids, logs) {
   share <- character(0)
   if ("lambda_a" %in% names(probe)) share <- paste0("A[", seq_len(ni), "]")
   if (all(c("epsilon", "epsilon_a", "lambda_a") %in% names(probe))) share <- c(share, paste0("S[", seq_len(ni), "]"))
+
+  true_vals <- read.table(file.path(sim_dir, "true_vals.tsv"), header = TRUE)
+  colnames(true_vals) <- gsub("(\\D+)(\\d+)$", "\\1[\\2]", colnames(true_vals))
+  names(true_vals)[names(true_vals) == "age"] <- "org"
+  true_vals <- align_skyline_index(true_vals, ni, truth_order_of(mf))
+  if (length(share)) true_vals <- ana_share(true_vals, ni)
+  # a run under another character model than the batch's estimates parameters that have no truth
+  rates <- intersect(rates, names(true_vals)); share <- intersect(share, names(true_vals))
 
   draws <- Map(function(f) {
     d <- read.table(f, header = TRUE)
@@ -190,12 +198,7 @@ rate_stats <- function(mf, ids, logs) {
     posterior::as_draws_matrix(d[post_burnin(nrow(d)), c(rates, share)])
   }, logs)
 
-  true_vals <- read.table(file.path(sim_dir, "true_vals.tsv"), header = TRUE)
-  colnames(true_vals) <- gsub("(\\D+)(\\d+)$", "\\1[\\2]", colnames(true_vals))
-  names(true_vals)[names(true_vals) == "age"] <- "org"
-  true_vals <- align_skyline_index(true_vals, ni, truth_order_of(mf))
   check_alignment(draws, true_vals, ni, ids)
-  if (length(share)) true_vals <- ana_share(true_vals, ni)
   stats_for(draws, posterior::as_draws_matrix(true_vals[ids, c(rates, share)]))
 }
 

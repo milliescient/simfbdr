@@ -159,6 +159,15 @@ def analyze(run, force=False, jobs=1, slots=None, slot_dir=None):
         die(f"{rcfg} asks for retention, which needs character_coding informative.")
     if r.get("RETENTION", "false") == "true" and not b.get("RET_A"):
         die(f"{rcfg} asks for retention, and {batch} was simulated without a retention prior.")
+    mk = r.get("CHAR_INFER", "morphospeciation") == "mk"
+    if mk and r["CHARS"] != "true":
+        die(f"{rcfg} asks for the mk character model, and analyzes no characters.")
+    if mk and not (r.get("MKI_SHAPE") or b.get("MKR_SHAPE")):
+        die(f"{rcfg} asks for the mk character model, and neither it nor {batch} gives the rate's prior.")
+    if mk and (r.get("EPSILON_A", "false") == "true" or r.get("RETENTION", "false") == "true"):
+        die(f"{rcfg} asks for epsilon_a or retention, which the mk character model has not.")
+    if mk and len(set(str(b.get("CHAR_STATES", "2")).split(","))) > 1:
+        die(f"{rcfg} asks for the mk character model, which takes one state count for every character.")
     if r.get("EPSILON_A", "false") == "true" and (r["CHARS"] != "true" or r["ANA"] != "true"):
         die(f"{rcfg} asks for epsilon_a, a chance to change at anagenesis, which needs characters and anagenesis.")
     if r["ANA"] == "true" and r["MODEL"] != "fbdsp":
@@ -273,6 +282,10 @@ def analyze(run, force=False, jobs=1, slots=None, slot_dir=None):
                      f"EPSA_A <- {b.get('EPSA_A') or b.get('EPS_A', 1)}", f"EPSA_B <- {b.get('EPSA_B') or b.get('EPS_B', 9)}",
                      f"RETENTION <- {r.get('RETENTION', 'false')}",
                      f"RET_A <- {b.get('RET_A') or 1}", f"RET_B <- {b.get('RET_B') or 1}"]
+            if r.get("CHAR_INFER", "morphospeciation") == "mk":
+                head += ['CHAR_INFER <- "mk"',
+                         f"MKR_SHAPE <- {r.get('MKI_SHAPE') or b.get('MKR_SHAPE')}",
+                         f"MKR_RATE <- {r.get('MKI_RATE') or b.get('MKR_RATE')}"]
         head += [f'BINDIR <- "{tools.SCRIPTS}"'] + treated
         head += [f'source("{template}")']
         rev = os.path.join(work, f"run_{rep}.Rev")

@@ -265,6 +265,12 @@ if (EPS_ANAGENETIC && (is.na(EPSA_A) || is.na(EPSA_B))) stop("characters.epsilon
 RET_A <- cfg_opt("RET_A", NA); RET_B <- cfg_opt("RET_B", NA)
 CHAR_RETENTION <- !is.na(RET_A) || !is.na(RET_B)
 if (CHAR_RETENTION && (is.na(RET_A) || is.na(RET_B))) stop("characters.retention_prior needs alpha and beta")
+# mk: the characters change instead along each lineage in time, under Mk at a rate ~ Gamma(shape, rate)
+CHAR_MODEL <- Sys.getenv("CHAR_MODEL", "morphospeciation")
+if (!CHAR_MODEL %in% c("morphospeciation", "mk")) stop("characters.model must be morphospeciation or mk")
+MKR_SHAPE <- cfg_opt("MKR_SHAPE", NA); MKR_RATE <- cfg_opt("MKR_RATE", NA)
+if (CHAR_MODEL == "mk" && (is.na(MKR_SHAPE) || is.na(MKR_RATE))) stop("characters.model mk needs rate_prior shape and rate")
+if (CHAR_MODEL == "mk" && EPS_ANAGENETIC) stop("characters.model mk has no epsilon_a")
 
 # Anagenesis: each lineage also splits into a new species at rate lambda_a, drawn per replicate
 # from the speciation prior and constant in time. Off, nothing extra is drawn.
@@ -298,7 +304,8 @@ truth_of <- function(th, lambda, mu, psi, age) {
   if (TURNOVER != "none") v <- c(v, turnover = th$turnover)
   if (MIX_K > 1 && MIX_MODEL == "gamma") v <- c(v, alpha = th$alpha)
   if (MIX_MODEL == "invisible") v <- c(v, setNames(th$mix_w, paste0("mix_w", 1:3)), mix_r = th$mix_r)
-  if (N_CHARS > 0) v <- c(v, epsilon = th$epsilon)
+  if (N_CHARS > 0 && CHAR_MODEL == "mk") v <- c(v, char_rate = th$char_rate)
+  else if (N_CHARS > 0) v <- c(v, epsilon = th$epsilon)
   if (ANAGENESIS) v <- c(v, lambda_a = th$lambda_a)
   if (EPS_ANAGENETIC) v <- c(v, epsilon_a = th$epsilon_a)
   if (CHAR_RETENTION) v <- c(v, retention = th$retention)
@@ -334,7 +341,8 @@ draw_theta <- function() {
     th$mix_w <- g / sum(g)
     th$mix_r <- runif(1)
   }
-  if (N_CHARS > 0) th$epsilon <- rbeta(1, EPS_A, EPS_B)
+  if (N_CHARS > 0 && CHAR_MODEL == "mk") th$char_rate <- rgamma(1, MKR_SHAPE, rate = MKR_RATE)
+  else if (N_CHARS > 0) th$epsilon <- rbeta(1, EPS_A, EPS_B)
   if (ANAGENESIS) th$lambda_a <- rgamma(1, GAMMA_L_SHAPE, rate = b_lambda)
   if (EPS_ANAGENETIC) th$epsilon_a <- rbeta(1, EPSA_A, EPSA_B)
   if (CHAR_RETENTION) th$retention <- rbeta(1, RET_A, RET_B)
@@ -456,6 +464,31 @@ draw_character <- function(par, epsilon, c) {
     }
     x[i] <- x[par[i]]
     if (runif(1) < epsilon[i]) x[i] <- (x[i] + sample.int(CHAR_STATES[c] - 1, 1)) %% CHAR_STATES[c]
+  }
+  x
+}
+
+# Characters under Mk along each species' lifetime, at its extinction, as dnPhyloCTMC reads the extended
+# tree: a daughter starts from its parent's state at its own birth, and the first species' are uniform
+draw_characters_mk <- function(sim, rate, cols = seq_len(N_CHARS)) {
+  n <- length(sim$PAR)
+  K <- CHAR_STATES[cols]
+  step <- function(x, dt) {
+    stay <- 1 / K + (K - 1) / K * exp(-K * rate * dt / (K - 1))
+    for (c in which(runif(length(x)) >= stay)) x[c] <- (x[c] + sample.int(K[c] - 1, 1)) %% K[c]
+    x
+  }
+  end <- ifelse(is.na(sim$TE), PRESENT, sim$TE)
+  start <- matrix(0L, n, length(cols)); x <- start
+  for (i in seq_len(n)) {
+    s <- if (is.na(sim$PAR[i])) vapply(K, function(k) sample.int(k, 1) - 1L, 0L) else start[i, ]
+    age <- sim$TS[i]
+    kids <- which(sim$PAR == i)
+    for (j in kids[order(-sim$TS[kids])]) {
+      s <- step(s, age - sim$TS[j]); age <- sim$TS[j]
+      start[j, ] <- s
+    }
+    x[i, ] <- step(s, age - end[i])
   }
   x
 }
@@ -902,8 +935,14 @@ simulate_rep <- function(rates, age, shifts,
   # draw costs none, then kept for the reported ones
   chars <- NULL
   if (sbc && N_CHARS > 0) {
-    eps <- change_probabilities(sim, th)
-    x <- draw_characters(sim$PAR, eps)
+    if (CHAR_MODEL == "mk") {
+      x <- draw_characters_mk(sim, th$char_rate)
+      redraw <- function(c) draw_characters_mk(sim, th$char_rate, c)[, 1]
+    } else {
+      eps <- change_probabilities(sim, th)
+      x <- draw_characters(sim$PAR, eps)
+      redraw <- function(c) draw_character(sim$PAR, eps, c)
+    }
     k <- as.integer(sub("^t", "", unique(specs[[1]]$taxon)))
     chars <- x[k, , drop = FALSE]
     rownames(chars) <- paste0("t", k)
@@ -921,7 +960,7 @@ simulate_rep <- function(rates, age, shifts,
         while (!kept(chars[, c])) {
           tries <- tries + 1
           if (tries > 1e5) stop("a character was dropped over 1e5 draws, so it cannot be conditioned on being kept")
-          chars[, c] <- draw_character(sim$PAR, eps, c)[k]
+          chars[, c] <- redraw(c)[k]
         }
       }
     }
@@ -1285,6 +1324,9 @@ if (!exists("sim_functions_only")) {
     }
     if (CHAR_RETENTION) {
       keys <- c(keys, "RET_A", "RET_B"); vals <- c(vals, RET_A, RET_B)
+    }
+    if (CHAR_MODEL == "mk") {
+      keys <- c(keys, "CHAR_MODEL", "MKR_SHAPE", "MKR_RATE"); vals <- c(vals, "mk", MKR_SHAPE, MKR_RATE)
     }
   }
   if (ANAGENESIS) {

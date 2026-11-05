@@ -7,7 +7,8 @@
 ###
 ### Set before sourcing: rep, SKYLINE, REPORTING, COND, RHO, RANGE_START, GENS, PRINTGEN,
 ###   OCCURRENCES, BATCHDIR, OUTDIR, the GAMMA_ settings, AGE_MIN, AGE_MAX, ORIGIN_PRIOR, MAXFA,
-###   ANAGENESIS, CHARS, and with CHARS: CHARFILE, NSTATES, EPS_A, EPS_B, CODING, EPSILON_A, EPSA_A, EPSA_B, RETENTION, RET_A, RET_B, and as for mixture-prior.Rev
+###   ANAGENESIS, CHARS, and with CHARS: CHARFILE, NSTATES, EPS_A, EPS_B, CODING, EPSILON_A, EPSA_A, EPSA_B, RETENTION, RET_A, RET_B,
+###   CHAR_INFER, and with CHAR_INFER mk: MKR_SHAPE, MKR_RATE; and as for mixture-prior.Rev
 
 # TAXA is set when the run treats the occurrence ages some other way than as reported
 if (!exists("TAXA")) TAXA <- BATCHDIR + "/" + OCCURRENCES + "/taxa_" + rep + ".tsv"
@@ -92,7 +93,16 @@ if (REPORTING == "presence") {
 # Characters that change only at speciation, each character independently with probability
 # epsilon, as the batch simulated them. The changed sets are summed over, so the only latents are
 # the hidden speciations on each branch.
-if (CHARS) {
+if (!exists("CHAR_INFER")) CHAR_INFER <- "morphospeciation"
+# or under Mk along each lineage in time, at a strict clock rate, the tips being the extinctions
+if (CHARS && CHAR_INFER == "mk") {
+    morpho <- readDiscreteCharacterData(CHARFILE)
+    if (!exists("CODING")) CODING <- "all"
+    char_rate ~ dnGamma(MKR_SHAPE, MKR_RATE)
+    moves.append( mvScale(char_rate, lambda=1, weight=5) )
+    morph ~ dnPhyloCTMC(tree=tr, Q=fnJC(NSTATES[1]), branchRates=char_rate, type="Standard", coding=CODING)
+    morph.clamp(morpho)
+} else if (CHARS) {
     morpho <- readDiscreteCharacterData(CHARFILE)
     epsilon ~ dnBeta(EPS_A, EPS_B)
     moves.append( mvSlide(epsilon, delta=0.05, weight=5) )
@@ -148,6 +158,12 @@ if (!exists("EPSILON_A")) EPSILON_A <- false
 if (!exists("RETENTION")) RETENTION <- false
 if (LATENTS) {
     monitors.append( mnModel(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN) )
+} else if (CHARS && CHAR_INFER == "mk" && ANAGENESIS) {
+    monitors.append( mnFile(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN,
+                            lambda, mu, psi, org, char_rate, lambda_a, nsa) )
+} else if (CHARS && CHAR_INFER == "mk") {
+    monitors.append( mnFile(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN,
+                            lambda, mu, psi, org, char_rate) )
 } else if (CHARS && ANAGENESIS && EPSILON_A && RETENTION) {
     monitors.append( mnFile(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN,
                             lambda, mu, psi, org, epsilon, epsilon_a, retention, lambda_a, nsa) )

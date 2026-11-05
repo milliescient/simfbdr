@@ -80,6 +80,10 @@ characters:                        # unset, no characters are simulated
   retention_prior:                 # retention ~ Beta(alpha, beta): set, keep only characters informative among the
     alpha:                         # reported taxa, and each varying only by autapomorphies with probability retention
     beta:
+  model: morphospeciation          # mk: each character changes along each lineage in time instead, under Mk
+  rate_prior:                      # mk: the rate ~ Gamma(shape, rate), expected changes per character per unit
+    shape:                         # time, drawn per replicate
+    rate:
 
 simulation_limits:
   max_expected_lineages:           # no ceiling

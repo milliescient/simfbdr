@@ -39,6 +39,11 @@ inference:
                                 # only by autapomorphies was kept, for a batch with characters.retention_prior
   epsilon_a: false              # true estimates a separate chance to change at anagenesis. fbdsp with
                                 # characters and anagenesis only
+  character_model: morphospeciation  # mk: the characters under dnPhyloCTMC on the same tree, at a strict
+                                # clock rate, whichever model the batch simulated
+  character_rate_prior:         # mk: the rate's prior, Gamma(shape, rate); left out, the batch's
+    shape:                      # characters.rate_prior
+    rate:
 
 mcmc:
   generations:                  # required
