@@ -308,6 +308,15 @@ component of the lineage it continues, and changes characters with the same epsi
 one. A run with `inference.model: fbdsp` and `inference.anagenesis: true` estimates lambda_a;
 `false` analyzes the same data as pure budding.
 
+A batch with `tree.symmetric_prior: {alpha, beta}` makes each speciation symmetric with probability
+beta ~ Beta(alpha, beta), drawn per replicate and constant in time: the parent ends there and the
+lineage it carried on becomes a new species, as the budded daughter is. Like anagenesis this
+relabels the budding tree and reassigns occurrences by age; on the backward path FossilSim's
+`sim.taxonomy(beta=)` does it. Each new species draws its own sampling component and changes
+characters with epsilon. beta is a truth, and `sim_list.RData` keeps each species' `MODE` ("o", "b",
+"a", "s"). No run estimates beta yet, since dnFBDSP does not take it, so a run analyzes such a batch
+as budding.
+
 A batch with none of these draws no extra random number, so it is the same batch it was before
 they existed.
 

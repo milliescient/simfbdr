@@ -55,6 +55,10 @@ BATCH_SETTINGS = [
     ("ANAGENESIS", "tree.anagenesis",
      "true: species also arise by anagenesis, at a rate lambda_a drawn per replicate from the "
      "speciation prior and constant in time"),
+    ("SYM_A", "tree.symmetric_prior.alpha",
+     "beta ~ Beta(alpha, beta), drawn per replicate: each speciation's chance to be symmetric, the "
+     "parent ending and both daughters new species. Unset, every speciation is budding"),
+    ("SYM_B", "tree.symmetric_prior.beta", ""),
     ("N_EXTANT", "tree.extant_species",
      "set, trees are drawn backward from exactly this many extant species and the origin is an "
      "output rather than a draw"),

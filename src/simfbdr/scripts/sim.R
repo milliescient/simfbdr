@@ -275,6 +275,11 @@ if (CHAR_MODEL == "mk" && EPS_ANAGENETIC) stop("characters.model mk has no epsil
 # Anagenesis: each lineage also splits into a new species at rate lambda_a, drawn per replicate
 # from the speciation prior and constant in time. Off, nothing extra is drawn.
 ANAGENESIS <- Sys.getenv("ANAGENESIS", "false") == "true"
+# Symmetric speciation: each speciation is symmetric with probability beta ~ Beta(alpha, beta), drawn per
+# replicate and constant in time, the parent ending and both daughters new species. Unset, all is budding.
+SYM_A <- cfg_opt("SYM_A", NA); SYM_B <- cfg_opt("SYM_B", NA)
+SYMMETRIC <- !is.na(SYM_A) || !is.na(SYM_B)
+if (SYMMETRIC && (is.na(SYM_A) || is.na(SYM_B))) stop("tree.symmetric_prior needs alpha and beta")
 
 # RevBayes's fnDiscretizeGamma(alpha, alpha, K): each category's mean, so the rates average one
 discretized_gamma <- function(alpha, K) {
@@ -309,6 +314,7 @@ truth_of <- function(th, lambda, mu, psi, age) {
   if (ANAGENESIS) v <- c(v, lambda_a = th$lambda_a)
   if (EPS_ANAGENETIC) v <- c(v, epsilon_a = th$epsilon_a)
   if (CHAR_RETENTION) v <- c(v, retention = th$retention)
+  if (SYMMETRIC) v <- c(v, beta = th$beta)
   v
 }
 
@@ -346,30 +352,52 @@ draw_theta <- function() {
   if (ANAGENESIS) th$lambda_a <- rgamma(1, GAMMA_L_SHAPE, rate = b_lambda)
   if (EPS_ANAGENETIC) th$epsilon_a <- rbeta(1, EPSA_A, EPSA_B)
   if (CHAR_RETENTION) th$retention <- rbeta(1, RET_A, RET_B)
+  if (SYMMETRIC) th$beta <- rbeta(1, SYM_A, SYM_B)
   th
 }
 
-# Anagenetic speciation relabels the same tree rather than reshaping it: split each species at
-# Poisson(lambda_a) times in its lifespan and reassign occurrences by time. ORIG is the species
-# each new one is a segment of, so what was drawn per species before the split follows it.
-add_anagenesis <- function(sim, fossils, lambda_a) {
+# Anagenetic and symmetric speciation relabel the same budding tree rather than reshape it. A species
+# splits at Poisson(lambda_a) times in its lifespan, and at each daughter's birth with probability beta,
+# where the parent ends and the lineage it carried on becomes a new species too. Occurrences are
+# reassigned by time. ORIG is the species each new one is a segment of, so what was drawn per species
+# before the split follows it. MODE is how each began: "o" the origin, "b" budding, "a" anagenesis,
+# "s" symmetric, as FossilSim codes it; CONT marks a segment that carries on its parent's lineage.
+relabel_species <- function(sim, fossils, lambda_a, beta = 0) {
   n0 <- length(sim$TS)
 
-  # segment boundaries per species, oldest first
-  starts <- ends <- vector("list", n0)
+  # anagenetic events per species, drawn first, so a batch without symmetric speciation draws as before
+  ana_ev <- vector("list", n0)
   for (k in 1:n0) {
     te <- ifelse(is.na(sim$TE[k]), 0, sim$TE[k])
-    ev <- sort(runif(rpois(1, lambda_a * (sim$TS[k] - te)), te, sim$TS[k]),
-               decreasing = TRUE)
+    ana_ev[[k]] <- if (lambda_a > 0) runif(rpois(1, lambda_a * (sim$TS[k] - te)), te, sim$TS[k]) else numeric(0)
+  }
+  # which births are symmetric, in daughter order
+  sym_birth <- rep(FALSE, n0)
+  if (beta > 0) {
+    d <- which(!is.na(sim$PAR))
+    sym_birth[d] <- runif(length(d)) < beta
+  }
+
+  # segment boundaries per species, oldest first, and the mode each later segment begins with
+  starts <- ends <- smode <- vector("list", n0)
+  for (k in 1:n0) {
+    te <- ifelse(is.na(sim$TE[k]), 0, sim$TE[k])
+    sym_ev <- sim$TS[which(sym_birth & sim$PAR %in% k)]
+    ev <- c(ana_ev[[k]], sym_ev)
+    o <- order(ev, decreasing = TRUE)
+    ev <- ev[o]
     starts[[k]] <- c(sim$TS[k], ev)
     ends[[k]] <- c(ev, te)
+    first <- if (is.na(sim$PAR[k])) "o" else if (sym_birth[k]) "s" else "b"
+    smode[[k]] <- c(first, rep(c("a", "s"), c(length(ana_ev[[k]]), length(sym_ev)))[o])
   }
 
   # new indices run in (species, segment) order, so a parent's index stays below its daughter's
   n_seg <- sapply(starts, length)
   offset <- cumsum(c(0, n_seg))[1:n0]
 
-  # segment of species k alive at time t
+  # segment of species k alive at time t; at a boundary, the older one, which a daughter born there
+  # descends from
   seg_at <- function(k, t) {
     s <- which(t <= starts[[k]] & t >= ends[[k]])
     if (length(s) == 0) n_seg[k] else s[1]
@@ -407,7 +435,8 @@ add_anagenesis <- function(sim, fossils, lambda_a) {
   sim <- list(TE = TE, TS = TS, PAR = PAR, EXTANT = EXTANT)
   class(sim) <- "sim"
 
-  list(SIM = sim, FOSSILS = fossils, ORIG = rep(seq_len(n0), n_seg))
+  list(SIM = sim, FOSSILS = fossils, ORIG = rep(seq_len(n0), n_seg), MODE = unlist(smode),
+       CONT = unlist(lapply(n_seg, function(n) seq_len(n) > 1)))
 }
 
 # A replicate's relative rate and weight of each component. NULL weights are equal. invisible:
@@ -444,12 +473,10 @@ draw_characters <- function(par, epsilon) {
 
 # Each species' chance to change a character at its own speciation: epsilon_a if it began by anagenesis,
 # where its parent ended, and epsilon otherwise
-change_probabilities <- function(sim, th) {
+change_probabilities <- function(sim, th, mode) {
   p <- rep(th$epsilon, length(sim$PAR))
   if (!EPS_ANAGENETIC) return(p)
-  te <- ifelse(is.na(sim$TE), -Inf, sim$TE)
-  ana <- !is.na(sim$PAR) & abs(sim$TS - te[sim$PAR]) < 1e-9
-  p[which(ana)] <- th$epsilon_a
+  p[which(mode == "a")] <- th$epsilon_a
   p
 }
 
@@ -555,26 +582,26 @@ bd_sim_bounded <- function(n0, lambda, mu, tMax, lShifts, mShifts, nFinal) {
 
 # TreeSim draws the tree backward from a fixed number of extant species, so the origin is an
 # output rather than a draw. FossilSim then assigns budding species identity to the complete
-# tree: beta = 0 is budding, lambda.a = 0 no anagenesis. Both packages index rates
+# tree: beta = 0 is pure budding, lambda.a = 0 no anagenesis. Both packages index rates
 # youngest-first, and the pipeline carries them oldest-first, so both arguments reverse.
-backward_sim <- function(n_extant, lambda, mu, psi, breaks, mix = NULL, lambda_a = 0) {
+backward_sim <- function(n_extant, lambda, mu, psi, breaks, mix = NULL, lambda_a = 0, beta = 0) {
   tr <- TreeSim::sim.rateshift.taxa(n = n_extant, numbsim = 1,
                                     lambda = rev(lambda), mu = rev(mu),
                                     frac = rep(1, length(lambda)),
                                     times = c(0, breaks), complete = TRUE)[[1]]
-  tx <- FossilSim::sim.taxonomy(tr, beta = 0, lambda.a = lambda_a)
+  tx <- FossilSim::sim.taxonomy(tr, beta = beta, lambda.a = lambda_a)
 
   sp  <- sort(unique(tx$sp))
   TS  <- vapply(sp, function(s) max(tx$start[tx$sp == s]), 0)
   TE  <- vapply(sp, function(s) min(tx$end[tx$sp == s]), 0)
   par <- vapply(sp, function(s) tx$parent[tx$sp == s][1], 0)
-  anag <- vapply(sp, function(s) tx$mode[tx$sp == s][1] == "a", FALSE)
+  mode <- vapply(sp, function(s) tx$mode[tx$sp == s][1], "")
 
   # species 1 has to be the origin lineage: the ancestor walk in summarize.R stops there and
   # the acceptance test asks whether it was sampled
   ord <- order(TS, decreasing = TRUE)
   idx <- integer(max(sp)); idx[sp[ord]] <- seq_along(ord)
-  TS <- TS[ord]; TE <- TE[ord]; par <- par[ord]; anag <- anag[ord]
+  TS <- TS[ord]; TE <- TE[ord]; par <- par[ord]; mode <- mode[ord]
 
   # the root's parent is 0, and R drops a zero index, so idx[par] would come back short and
   # silently shift every parent after it
@@ -591,7 +618,7 @@ backward_sim <- function(n_extant, lambda, mu, psi, breaks, mix = NULL, lambda_a
   comp <- draw_components(length(TS), mix$weight)
   # an anagenetic species continues its ancestor's lineage and keeps its sampling component, as
   # in the forward simulator. Oldest first, so an ancestor is settled before its descendant.
-  if (!is.null(comp)) for (i in which(anag)) comp[i] <- comp[PAR[i]]
+  if (!is.null(comp)) for (i in which(mode == "a")) comp[i] <- comp[PAR[i]]
   if (is.null(comp)) {
     fos <- FossilSim::sim.fossils.intervals(taxonomy = tx, rates = rev(psi),
                                             interval.ages = c(0, breaks, top))
@@ -623,7 +650,7 @@ backward_sim <- function(n_extant, lambda, mu, psi, breaks, mix = NULL, lambda_a
   if (nrow(fos) == 0) {
     f <- setNames(data.frame(character(0), logical(0), numeric(0), numeric(0), numeric(0),
                              stringsAsFactors = FALSE), cols)
-    return(list(SIM = sim, FOSSILS = f, AGE = max(TS), COMP = comp))
+    return(list(SIM = sim, FOSSILS = f, AGE = max(TS), COMP = comp, MODE = mode))
   }
   k <- idx[fos$sp]
   # the origin is an output here, so the bins are built out to the tree that was drawn
@@ -633,7 +660,7 @@ backward_sim <- function(n_extant, lambda, mu, psi, breaks, mix = NULL, lambda_a
                   MaxT = bins[j + 1], MinT = bins[j], stringsAsFactors = FALSE)
   # retain_occs reads the first row as the oldest occurrence and the last as the youngest
   f <- f[order(k, -f$SampT), , drop = FALSE]
-  list(SIM = sim, FOSSILS = f, AGE = max(TS), COMP = comp)
+  list(SIM = sim, FOSSILS = f, AGE = max(TS), COMP = comp, MODE = mode)
 }
 
 # Reporting models, by the sim's model number. An SBC rep emits both from one
@@ -753,10 +780,12 @@ simulate_rep <- function(rates, age, shifts,
       }
 
       bw <- backward_sim(N_EXTANT, lambda, mu, psi, cov_breaks, mix = if (MIX_K > 1) mixture(th),
-                         lambda_a = if (ANAGENESIS) th$lambda_a else 0)
+                         lambda_a = if (ANAGENESIS) th$lambda_a else 0,
+                         beta = if (SYMMETRIC) th$beta else 0)
       sim <- bw$SIM
       fossils <- bw$FOSSILS
       comp <- bw$COMP
+      sp_mode <- bw$MODE
       # the origin is what the tree realized, and it is the truth written for it
       age <- bw$AGE
       tMax <- age
@@ -799,13 +828,23 @@ simulate_rep <- function(rates, age, shifts,
                               MaxT = numeric(0), MinT = numeric(0))
     }
 
-    # split species at anagenetic events before any of them is reported. A segment keeps the
-    # sampling component of the lineage it continues.
-    if (ANAGENESIS) {
-      ana <- add_anagenesis(sim, fossils, th$lambda_a)
+    # split species at anagenetic and symmetric events before any of them is reported. An
+    # anagenetic segment keeps the sampling component of the lineage it continues; the lineage a
+    # symmetric speciation carries on is a new species and draws its own, in segment order so that
+    # an anagenetic one after it inherits the new draw.
+    sp_mode <- ifelse(is.na(sim$PAR), "o", "b")
+    if (ANAGENESIS || SYMMETRIC) {
+      ana <- relabel_species(sim, fossils, if (ANAGENESIS) th$lambda_a else 0,
+                             if (SYMMETRIC) th$beta else 0)
       sim <- ana$SIM
       fossils <- ana$FOSSILS
+      sp_mode <- ana$MODE
       if (!is.null(comp)) comp <- comp[ana$ORIG]
+      if (!is.null(comp) && SYMMETRIC) {
+        for (i in which(ana$CONT)) {
+          comp[i] <- if (sp_mode[i] == "s") draw_components(1, mix$weight) else comp[i - 1]
+        }
+      }
     }
     }
 
@@ -939,7 +978,7 @@ simulate_rep <- function(rates, age, shifts,
       x <- draw_characters_mk(sim, th$char_rate)
       redraw <- function(c) draw_characters_mk(sim, th$char_rate, c)[, 1]
     } else {
-      eps <- change_probabilities(sim, th)
+      eps <- change_probabilities(sim, th, sp_mode)
       x <- draw_characters(sim$PAR, eps)
       redraw <- function(c) draw_character(sim$PAR, eps, c)
     }
@@ -972,7 +1011,7 @@ simulate_rep <- function(rates, age, shifts,
 
   # return sim, ranges and k
   return(list(SIM = sim, SPECIMENS = specs, RANGES = ranges,
-              TV = true_vals, BINS = bins, CHARS = chars, COMP = comp))
+              TV = true_vals, BINS = bins, CHARS = chars, COMP = comp, MODE = sp_mode))
 }
 
 # A standard-data NEXUS matrix, one row per taxon
@@ -1185,6 +1224,8 @@ simulate_set <- function(n_key, reps, rates, age, base_dir,
                 col.names = TRUE, row.names = FALSE, quote = FALSE, sep = "\t")
     
     # append to list of simulations
+    # how each species began, which the reported tree alone cannot tell apart
+    if (SYMMETRIC) sim$MODE <- sim_rep$MODE
     sims[[rep]] <- sim
   }
   
@@ -1331,6 +1372,9 @@ if (!exists("sim_functions_only")) {
   }
   if (ANAGENESIS) {
     keys <- c(keys, "ANAGENESIS"); vals <- c(vals, "true")
+  }
+  if (SYMMETRIC) {
+    keys <- c(keys, "SYM_A", "SYM_B"); vals <- c(vals, SYM_A, SYM_B)
   }
   if (!is.na(JITTER_MIN)) {
     keys <- c(keys, "JITTER_MIN", "JITTER_MAX"); vals <- c(vals, JITTER_MIN, JITTER_MAX)
