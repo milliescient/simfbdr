@@ -155,19 +155,18 @@ def analyze(run, force=False, jobs=1, slots=None, slot_dir=None):
         die(f"{rcfg} asks for the characters, and {batch} simulated none.")
     if r.get("CODING", "all") != "all" and r["CHARS"] != "true":
         die(f"{rcfg} asks for {r['CODING']} character coding, and analyzes no characters.")
-    if r.get("RETENTION", "false") == "true" and r.get("CODING", "all") != "informative":
-        die(f"{rcfg} asks for retention, which needs character_coding informative.")
-    if r.get("RETENTION", "false") == "true" and not b.get("RET_A"):
-        die(f"{rcfg} asks for retention, and {batch} was simulated without a retention prior.")
+    if r.get("RETENTION", "false") == "true":
+        die(f"{rcfg} asks for retention, which was dnPhyloMorphospeciation's own correction. "
+            f"Neither character model has it: run it against an rb that still has that distribution.")
     mk = r.get("CHAR_INFER", "morphospeciation") == "mk"
     if mk and r["CHARS"] != "true":
         die(f"{rcfg} asks for the mk character model, and analyzes no characters.")
     if mk and not (r.get("MKI_SHAPE") or b.get("MKR_SHAPE")):
         die(f"{rcfg} asks for the mk character model, and neither it nor {batch} gives the rate's prior.")
-    if mk and (r.get("EPSILON_A", "false") == "true" or r.get("RETENTION", "false") == "true"):
-        die(f"{rcfg} asks for epsilon_a or retention, which the mk character model has not.")
-    if mk and len(set(str(b.get("CHAR_STATES", "2")).split(","))) > 1:
-        die(f"{rcfg} asks for the mk character model, which takes one state count for every character.")
+    if mk and r.get("EPSILON_A", "false") == "true":
+        die(f"{rcfg} asks for epsilon_a, which the mk character model has not.")
+    if r["CHARS"] == "true" and len(set(str(b.get("CHAR_STATES", "2")).split(","))) > 1:
+        die(f"{rcfg} analyzes characters under one Mk matrix, which takes one state count for every character.")
     if r.get("EPSILON_A", "false") == "true" and (r["CHARS"] != "true" or r["ANA"] != "true"):
         die(f"{rcfg} asks for epsilon_a, a chance to change at anagenesis, which needs characters and anagenesis.")
     if r["ANA"] == "true" and r["MODEL"] != "fbdsp":

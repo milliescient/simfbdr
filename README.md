@@ -288,8 +288,16 @@ complete tree: the first species' states are uniform, and at each budding every 
 the new species changes with probability epsilon to a uniformly drawn other state. epsilon ~
 Beta(`epsilon_prior`) is drawn per replicate. The characters of every reported taxon are in
 `characters/characters_<rep>.nex`. A run with `inference.model: fbdsp` and
-`inference.characters: true` adds them under `dnPhyloMorphospeciation` on the dnFBDSP tree and
-estimates epsilon.
+`inference.characters: true` adds them on the dnFBDSP tree and estimates epsilon.
+
+The speciations on a branch are the latents. dnFBDSP gives the Poisson mean of the ones that left
+no sample, and `fnTreeAssembly` puts the drawn count on the tree as a branch length, so every
+character sees the one count. A single event changes a character with probability epsilon exactly
+when it carries `-cap * ln(1 - epsilon/cap)` of Mk branch length, for `cap = (n-1)/n` over n
+states, which is what the assembled length is in. Three limits follow: epsilon above `cap` is a
+repulsion no branch length reaches, and is read as the complete randomization `cap` already is;
+every character needs the same `characters.states`, since one Q carries them all; and
+`inference.retention` is refused, having been a correction of dnPhyloMorphospeciation's own.
 
 ## Anagenesis
 

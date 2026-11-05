@@ -114,7 +114,7 @@ RUN_SETTINGS = [
     ("ANA", "inference.anagenesis",
      "estimate the anagenetic rate lambda_a; false analyzes the data as pure budding. fbdsp only"),
     ("CHARS", "inference.characters",
-     "analyze the batch's characters under dnPhyloMorphospeciation, estimating epsilon; fbdsp only"),
+     "analyze the batch's characters on the tree, estimating epsilon; fbdsp only"),
     ("EPSILON_A", "inference.epsilon_a",
      "estimate a separate chance to change at anagenesis, with the batch's epsilon_a prior or else "
      "epsilon's; needs characters and anagenesis"),
@@ -123,11 +123,12 @@ RUN_SETTINGS = [
      "which a batch with characters.variable_only needs; informative: each is conditioned on "
      "being parsimony informative"),
     ("RETENTION", "inference.retention",
-     "with informative coding, estimate the chance a character varying only by autapomorphies was "
-     "kept, with the batch's retention prior"),
+     "refused: it was dnPhyloMorphospeciation's own correction for keeping a character varying only "
+     "by autapomorphies, and neither character model here has it"),
     ("CHAR_INFER", "inference.character_model",
-     "morphospeciation: the characters under dnPhyloMorphospeciation; mk: under dnPhyloCTMC on the same "
-     "tree, at a strict clock rate, whichever model the batch simulated"),
+     "morphospeciation: each character changes at a speciation with probability epsilon, the "
+     "speciations on a branch being the latents fnTreeAssembly carries as its length; mk: the same "
+     "characters along each lineage in time at a strict clock rate, whichever model the batch simulated"),
     ("MKI_SHAPE", "inference.character_rate_prior.shape",
      "mk: the rate's prior, Gamma(shape, rate). Left out, the batch's characters.rate_prior"),
     ("MKI_RATE", "inference.character_rate_prior.rate", ""),

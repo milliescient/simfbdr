@@ -1,13 +1,13 @@
 ### Skyline FBD-range inference over dnFBDSP, the range process on a sampled budding tree, with the
 ### record on a dnFossilRecord node and, when the run asks for them, the characters on a
-### dnPhyloMorphospeciation node.
+### dnPhyloCTMC node over the speciation counts that fnTreeAssembly puts on the same tree.
 ###
 ### Every prior hyperparameter arrives as a variable set by the per-rep aux file that simfbdr
 ### writes from the batch's config.yml, as for infer-fbdrp.Rev.
 ###
 ### Set before sourcing: rep, SKYLINE, REPORTING, COND, RHO, RANGE_START, GENS, PRINTGEN,
 ###   OCCURRENCES, BATCHDIR, OUTDIR, the GAMMA_ settings, AGE_MIN, AGE_MAX, ORIGIN_PRIOR, MAXFA,
-###   ANAGENESIS, CHARS, and with CHARS: CHARFILE, NSTATES, EPS_A, EPS_B, CODING, EPSILON_A, EPSA_A, EPSA_B, RETENTION, RET_A, RET_B,
+###   ANAGENESIS, CHARS, and with CHARS: CHARFILE, NSTATES, EPS_A, EPS_B, CODING, EPSILON_A, EPSA_A, EPSA_B,
 ###   CHAR_INFER, and with CHAR_INFER mk: MKR_SHAPE, MKR_RATE; and as for mixture-prior.Rev
 
 # TAXA is set when the run treats the occurrence ages some other way than as reported
@@ -91,8 +91,9 @@ if (REPORTING == "presence") {
 }
 
 # Characters that change only at speciation, each character independently with probability
-# epsilon, as the batch simulated them. The changed sets are summed over, so the only latents are
-# the hidden speciations on each branch.
+# epsilon, as the batch simulated them. The speciations on a branch are the latents: dnFBDSP gives
+# the Poisson mean of the ones that left no sample, and fnTreeAssembly carries the drawn count as a
+# branch length, so every character sees the one count rather than a count of its own.
 if (!exists("CHAR_INFER")) CHAR_INFER <- "morphospeciation"
 # or under Mk along each lineage in time, at a strict clock rate, the tips being the extinctions
 if (CHARS && CHAR_INFER == "mk") {
@@ -104,6 +105,16 @@ if (CHARS && CHAR_INFER == "mk") {
     morph.clamp(morpho)
 } else if (CHARS) {
     morpho <- readDiscreteCharacterData(CHARFILE)
+    # one Q carries every character, and branchRates cannot hold a length per character
+    nst <- NSTATES[1]
+    if (NSTATES.size() > 1) {
+        for (j in 2:NSTATES.size()) {
+            if (NSTATES[j] != nst) stop("morphospeciation over fnTreeAssembly needs the same number of states for every character.")
+        }
+    }
+    if (!exists("RETENTION")) RETENTION <- false
+    if (RETENTION) stop("retention was dnPhyloMorphospeciation's own correction and has no dnPhyloCTMC form.")
+
     epsilon ~ dnBeta(EPS_A, EPS_B)
     moves.append( mvSlide(epsilon, delta=0.05, weight=5) )
     # a matrix of variable characters only conditions each on varying; an rb before the option never sees it
@@ -114,25 +125,42 @@ if (CHARS && CHAR_INFER == "mk") {
         epsilon_a ~ dnBeta(EPSA_A, EPSA_B)
         moves.append( mvSlide(epsilon_a, delta=0.05, weight=5) )
     }
-    # with informative coding, each character varying only by autapomorphies was kept with probability retention
-    if (!exists("RETENTION")) RETENTION <- false
-    if (RETENTION) {
-        retention ~ dnBeta(RET_A, RET_B)
-        moves.append( mvSlide(retention, delta=0.1, weight=5) )
-    }
-    if (EPSILON_A && RETENTION) {
-        morph ~ dnPhyloMorphospeciation(tree=tr, nStates=NSTATES, epsilon=epsilon, epsilon_a=epsilon_a, coding=CODING, retention=retention)
-    } else if (EPSILON_A) {
-        morph ~ dnPhyloMorphospeciation(tree=tr, nStates=NSTATES, epsilon=epsilon, epsilon_a=epsilon_a, coding=CODING)
-    } else if (RETENTION) {
-        morph ~ dnPhyloMorphospeciation(tree=tr, nStates=NSTATES, epsilon=epsilon, coding=CODING, retention=retention)
-    } else if (CODING != "all") {
-        morph ~ dnPhyloMorphospeciation(tree=tr, nStates=NSTATES, epsilon=epsilon, coding=CODING)
+
+    # One event changes a character with probability epsilon exactly when it carries this much Mk
+    # branch length. Above (n-1)/n the change is a repulsion, which no branch length reaches, so
+    # epsilon there is read as the complete randomization that (n-1)/n already is.
+    cap <- (nst - 1) / nst
+    ev  := abs(ifelse(epsilon < cap, cap * ln(abs(1 - epsilon/cap)), -1000.0))
+    if (EPSILON_A) {
+        eva := abs(ifelse(epsilon_a < cap, cap * ln(abs(1 - epsilon_a/cap)), -1000.0))
     } else {
-        morph ~ dnPhyloMorphospeciation(tree=tr, nStates=NSTATES, epsilon=epsilon)
+        eva := ev
     }
+
+    # By branch: the Poisson mean of the speciations that left no sample, and the observed event
+    # that began the species. A mean of zero is no Poisson at all, so each carries a floor that
+    # pins its count to zero without putting an impossible state in reach.
+    hb := tr.getHiddenBuddings()
+    ob := tr.getObservedBuddings()
+    if (ANAGENESIS) {
+        ha := tr.getHiddenAnageneses()
+        oa := tr.getObservedAnageneses()
+    }
+    for (i in 1:hb.size()) {
+        kb[i] ~ dnPoisson(hb[i] + 1E-10)
+        moves.append( mvRandomNaturalWalk(kb[i], weight=1) )
+        if (ANAGENESIS) {
+            ka[i] ~ dnPoisson(ha[i] + 1E-10)
+            moves.append( mvRandomNaturalWalk(ka[i], weight=1) )
+            brl[i] := (kb[i] + ob[i]) * ev + (ka[i] + oa[i]) * eva
+        } else {
+            brl[i] := (kb[i] + ob[i]) * ev
+        }
+    }
+    # the assembly leaves tr's own ages alone, so the characters and the record read one tree
+    chartree := fnTreeAssembly(tr, brl)
+    morph ~ dnPhyloCTMC(tree=chartree, Q=fnJC(nst), type="Standard", coding=CODING)
     morph.clamp(morpho)
-    moves.append( mvMorphospeciationEvents(morph, weight=2*taxa.size()/5) )
 }
 
 org  := tr.getOrigin()
@@ -155,18 +183,17 @@ if (LATENTS) {
 mymodel = model(tr)
 monitors = VectorMonitors()
 if (!exists("EPSILON_A")) EPSILON_A <- false
-if (!exists("RETENTION")) RETENTION <- false
 if (LATENTS) {
-    monitors.append( mnModel(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN) )
+    # the per-branch counts and the vectors they come from are nuisances with no truth to rank, and
+    # there are seven of them per branch
+    monitors.append( mnModel(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN,
+                             exclude=["kb", "ka", "hb", "ha", "ob", "oa", "brl", "ev", "eva"]) )
 } else if (CHARS && CHAR_INFER == "mk" && ANAGENESIS) {
     monitors.append( mnFile(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN,
                             lambda, mu, psi, org, char_rate, lambda_a, nsa) )
 } else if (CHARS && CHAR_INFER == "mk") {
     monitors.append( mnFile(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN,
                             lambda, mu, psi, org, char_rate) )
-} else if (CHARS && ANAGENESIS && EPSILON_A && RETENTION) {
-    monitors.append( mnFile(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN,
-                            lambda, mu, psi, org, epsilon, epsilon_a, retention, lambda_a, nsa) )
 } else if (CHARS && ANAGENESIS && EPSILON_A) {
     monitors.append( mnFile(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN,
                             lambda, mu, psi, org, epsilon, epsilon_a, lambda_a, nsa) )

@@ -31,16 +31,18 @@ inference:
                                 # the same data under a single psi. fbdrp only
   anagenesis: false             # true estimates the batch's anagenetic rate lambda_a; false analyzes the
                                 # data as pure budding. fbdsp only
-  characters: false             # true adds the batch's characters under dnPhyloMorphospeciation and
-                                # estimates epsilon. fbdsp only
+  characters: false             # true adds the batch's characters on the tree and estimates epsilon,
+                                # under the character_model below. fbdsp only
   character_coding: all         # variable conditions each character on varying, for a batch with
                                 # characters.variable_only; informative on being parsimony informative
-  retention: false              # true estimates, with informative coding, the chance a character varying
-                                # only by autapomorphies was kept, for a batch with characters.retention_prior
+  retention: false              # refused. It was dnPhyloMorphospeciation's own correction for keeping a
+                                # character varying only by autapomorphies, and neither model here has it
   epsilon_a: false              # true estimates a separate chance to change at anagenesis. fbdsp with
                                 # characters and anagenesis only
-  character_model: morphospeciation  # mk: the characters under dnPhyloCTMC on the same tree, at a strict
-                                # clock rate, whichever model the batch simulated
+  character_model: morphospeciation  # morphospeciation: each character changes at a speciation with
+                                # probability epsilon, the speciations on a branch being the latents that
+                                # fnTreeAssembly carries as its length. mk: the same characters along each
+                                # lineage in time at a strict clock rate, whichever model the batch simulated
   character_rate_prior:         # mk: the rate's prior, Gamma(shape, rate); left out, the batch's
     shape:                      # characters.rate_prior
     rate:
