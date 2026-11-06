@@ -205,7 +205,8 @@ if (ANAGENESIS) nsa := tr.numSampledAncestors()
 # the symmetric speciations the tree shows, and the expected number it hides, for their mixing
 if (SYMMETRIC) {
     obs_bif := sum(tr.getObservedBifurcations())
-    hid_bif := sum(tr.getHiddenBifurcations())
+    # the hidden counts are not yet defined under a psi mixture with symmetric speciation
+    if (!PSI_MIX) hid_bif := sum(tr.getHiddenBifurcations())
 }
 # as for infer-fbdrp.Rev, a per-taxon latent is dropped by not creating it
 if (!exists("LATENTS")) LATENTS <- TRUE
