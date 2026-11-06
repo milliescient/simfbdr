@@ -615,10 +615,8 @@ backward_sim <- function(n_extant, lambda, mu, psi, breaks, mix = NULL, lambda_a
   # the grid must be monotone and reach past the tree whichever is deeper, the oldest break or
   # the origin, or the last interval is malformed
   top <- max(max(TS), if (length(breaks)) max(breaks) else 0) + 1
+  # every species draws its own component, an anagenetic one too
   comp <- draw_components(length(TS), mix$weight)
-  # an anagenetic species continues its ancestor's lineage and keeps its sampling component, as
-  # in the forward simulator. Oldest first, so an ancestor is settled before its descendant.
-  if (!is.null(comp)) for (i in which(mode == "a")) comp[i] <- comp[PAR[i]]
   if (is.null(comp)) {
     fos <- FossilSim::sim.fossils.intervals(taxonomy = tx, rates = rev(psi),
                                             interval.ages = c(0, breaks, top))
@@ -816,8 +814,13 @@ simulate_rep <- function(rates, age, shifts,
     # kept beside sim, whose shape paleobuddy checks
     mix <- if (MIX_K > 1) mixture(th)
     comp <- draw_components(length(sim$TS), mix$weight)
+    split <- ANAGENESIS || SYMMETRIC
     if (is.null(comp)) {
       fossils <- sample_at(psi)
+    } else if (split) {
+      # the species are split below, each part with its own component: sample at the highest
+      # multiple and thin each occurrence to its part's
+      fossils <- sample_at(psi * max(mix$rate))
     } else {
       fossils <- do.call(rbind, lapply(seq_len(MIX_K), function(h) {
         S <- which(comp == h)
@@ -828,10 +831,8 @@ simulate_rep <- function(rates, age, shifts,
                               MaxT = numeric(0), MinT = numeric(0))
     }
 
-    # split species at anagenetic and symmetric events before any of them is reported. An
-    # anagenetic segment keeps the sampling component of the lineage it continues; the lineage a
-    # symmetric speciation carries on is a new species and draws its own, in segment order so that
-    # an anagenetic one after it inherits the new draw.
+    # split species at anagenetic and symmetric events before any of them is reported. Each part
+    # is a new species and draws its own component.
     sp_mode <- ifelse(is.na(sim$PAR), "o", "b")
     if (ANAGENESIS || SYMMETRIC) {
       ana <- relabel_species(sim, fossils, if (ANAGENESIS) th$lambda_a else 0,
@@ -839,10 +840,11 @@ simulate_rep <- function(rates, age, shifts,
       sim <- ana$SIM
       fossils <- ana$FOSSILS
       sp_mode <- ana$MODE
-      if (!is.null(comp)) comp <- comp[ana$ORIG]
-      if (!is.null(comp) && SYMMETRIC) {
-        for (i in which(ana$CONT)) {
-          comp[i] <- if (sp_mode[i] == "s") draw_components(1, mix$weight) else comp[i - 1]
+      if (!is.null(comp)) {
+        comp <- draw_components(length(sim$TS), mix$weight)
+        if (nrow(fossils) > 0) {
+          seg <- as.integer(sub("^t", "", fossils$Species))
+          fossils <- fossils[runif(nrow(fossils)) < mix$rate[comp[seg]] / max(mix$rate), , drop = FALSE]
         }
       }
     }
