@@ -72,6 +72,8 @@ rec.clamp(taxa)
 
 # every age in the tree needs a move: the tips are extinction times, the internal nodes births
 moves.append( mvFossilTipTimeUniform(tr, origin=origin, weight=taxa.size()/5) )
+# on an extended tree, an exact draw of each extinction from its conditional (rb a740251)
+if (EXTENDED) moves.append( mvExtinctionTimeGibbs(tr, weight=taxa.size()/5) )
 if (taxa.size() > 1) {
     moves.append( mvFNPR(tr, weight=taxa.size()) )
     moves.append( mvNodeTimeSlideUniform(tr, weight=taxa.size()) )
