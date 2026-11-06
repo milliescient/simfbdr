@@ -95,7 +95,7 @@ if (!EXTENDED && !ANAGENESIS) {
 if (ANAGENESIS) {
     moves.append( mvCollapseExpandFossilBranch(tr, origin, weight=taxa.size()/5) )
     # regrafts a subtree at a new age or onto a fossil, which mixes the anagenetic events with the topology
-    moves.append( mvWilsonBalding(tr, weight=taxa.size()) )
+    moves.append( mvWilsonBalding(tr, symmetric=SYMMETRIC, weight=taxa.size()) )
 }
 # the first and last appearances, which the tree does not carry
 moves.append( mvStratigraphicRange(tr, weight=taxa.size()) )
@@ -166,6 +166,11 @@ if (CHARS && CHAR_INFER == "mk") {
     # pins its count to zero without putting an impossible state in reach.
     hb := tr.getHiddenBuddings()
     ob := tr.getObservedBuddings()
+    # a symmetric speciation changes each daughter with epsilon, as a budding changes its new species
+    if (SYMMETRIC) {
+        hs := tr.getHiddenBifurcations()
+        os := tr.getObservedBifurcations()
+    }
     if (ANAGENESIS) {
         ha := tr.getHiddenAnageneses()
         oa := tr.getObservedAnageneses()
@@ -173,12 +178,19 @@ if (CHARS && CHAR_INFER == "mk") {
     for (i in 1:hb.size()) {
         kb[i] ~ dnPoisson(hb[i] + 1E-10)
         moves.append( mvRandomNaturalWalk(kb[i], weight=1) )
+        if (SYMMETRIC) {
+            ks[i] ~ dnPoisson(hs[i] + 1E-10)
+            moves.append( mvRandomNaturalWalk(ks[i], weight=1) )
+            cl[i] := kb[i] + ob[i] + ks[i] + os[i]
+        } else {
+            cl[i] := kb[i] + ob[i]
+        }
         if (ANAGENESIS) {
             ka[i] ~ dnPoisson(ha[i] + 1E-10)
             moves.append( mvRandomNaturalWalk(ka[i], weight=1) )
-            brl[i] := (kb[i] + ob[i]) * ev + (ka[i] + oa[i]) * eva
+            brl[i] := cl[i] * ev + (ka[i] + oa[i]) * eva
         } else {
-            brl[i] := (kb[i] + ob[i]) * ev
+            brl[i] := cl[i] * ev
         }
     }
     # the assembly leaves tr's own ages alone, so the characters and the record read one tree
@@ -217,7 +229,7 @@ if (LATENTS) {
     # the per-branch counts and the vectors they come from are nuisances with no truth to rank, and
     # there are seven of them per branch
     monitors.append( mnModel(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN,
-                             exclude=["kb", "ka", "hb", "ha", "ob", "oa", "brl", "ev", "eva"]) )
+                             exclude=["kb", "ka", "ks", "hb", "ha", "hs", "ob", "oa", "os", "cl", "brl", "ev", "eva"]) )
 } else if (CHARS && CHAR_INFER == "mk" && ANAGENESIS) {
     monitors.append( mnFile(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN,
                             lambda, mu, psi, org, char_rate, lambda_a, nsa) )

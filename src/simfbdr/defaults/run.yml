@@ -32,7 +32,7 @@ inference:
   anagenesis: false             # true estimates the batch's anagenetic rate lambda_a; false analyzes the
                                 # data as pure budding. fbdsp only
   symmetric: false              # true estimates beta, the chance a speciation is symmetric, under the
-                                # batch's prior. fbdsp without anagenesis, for now
+                                # batch's prior. fbdsp only
   extended: true                # false makes the tips last appearances and integrates the extinctions
                                 # out, which needs sampled ancestors even under budding. fbdsp only
   characters: false             # true adds the batch's characters on the tree and estimates epsilon,

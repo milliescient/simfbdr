@@ -119,7 +119,7 @@ RUN_SETTINGS = [
      "estimate the anagenetic rate lambda_a; false analyzes the data as pure budding. fbdsp only"),
     ("SYM", "inference.symmetric",
      "estimate beta, the chance a speciation is symmetric, with the batch's prior; false analyzes the "
-     "data as budding. fbdsp, without anagenesis for now"),
+     "data as budding. fbdsp only"),
     ("EXTENDED", "inference.extended",
      "true: the tree's tips are extinction times; false: they are last appearances and the extinctions "
      "are integrated out. fbdsp only"),
