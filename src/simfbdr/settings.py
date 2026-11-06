@@ -117,6 +117,12 @@ RUN_SETTINGS = [
      "component (fbdrp or fbdsp); false analyzes the same data under a single psi"),
     ("ANA", "inference.anagenesis",
      "estimate the anagenetic rate lambda_a; false analyzes the data as pure budding. fbdsp only"),
+    ("SYM", "inference.symmetric",
+     "estimate beta, the chance a speciation is symmetric, with the batch's prior; false analyzes the "
+     "data as budding. fbdsp on a sampled tree (extended false) only, for now"),
+    ("EXTENDED", "inference.extended",
+     "true: the tree's tips are extinction times; false: they are last appearances and the extinctions "
+     "are integrated out. fbdsp only"),
     ("CHARS", "inference.characters",
      "analyze the batch's characters on the tree, estimating epsilon; fbdsp only"),
     ("EPSILON_A", "inference.epsilon_a",
@@ -193,6 +199,7 @@ CHOICES = {"RANGE_START": ("origination", "divergence"), "MODEL": ("fbdrp", "bds
            "RETENTION": ("true", "false"),
            "MIX_MODEL": ("gamma", "invisible"),
            "ANAGENESIS": ("true", "false"), "ANA": ("true", "false"),
+           "SYM": ("true", "false"), "EXTENDED": ("true", "false"),
            "COND": ("time", "sampling", "survival", "nTaxa"),
            "TAXA_COUNT": ("fossil", "record"),
            "ORIGIN_PRIOR": ("uniform", "exponential", "none"),

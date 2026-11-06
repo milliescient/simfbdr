@@ -174,6 +174,17 @@ def analyze(run, force=False, jobs=1, slots=None, slot_dir=None):
     if r["ANA"] == "true" and b.get("ANAGENESIS") != "true":
         die(f"{rcfg} asks for anagenesis, and {batch} was simulated without it: the analysis "
             f"takes the anagenetic rate's prior from the batch.")
+    if (r["SYM"] == "true" or r["EXTENDED"] == "false") and r["MODEL"] != "fbdsp":
+        die(f"{rcfg} asks for symmetric speciation or a sampled tree, which only the tree process has: model fbdsp.")
+    if r["SYM"] == "true" and not b.get("SYM_A"):
+        die(f"{rcfg} asks for symmetric speciation, and {batch} was simulated without it: the analysis "
+            f"takes beta's prior from the batch.")
+    if r["SYM"] == "true" and r["EXTENDED"] == "true":
+        die(f"{rcfg} asks for symmetric speciation on an extended tree, which needs a collapse move rb does "
+            f"not have yet. Set inference.extended false.")
+    if r["SYM"] == "true" and r["ANA"] == "true":
+        die(f"{rcfg} asks for symmetric speciation with anagenesis, whose mvWilsonBalding is not yet checked "
+            f"against symmetric nodes.")
     if r["MODEL"] == "fbdsp" and r["ORIGIN_PRIOR"] == "none":
         die(f"{rcfg} supplies no origin, which dnFBDSP needs.")
     if r["MODEL"] == "fbdsp" and r["RANGE_START"] == "divergence":
@@ -267,7 +278,9 @@ def analyze(run, force=False, jobs=1, slots=None, slot_dir=None):
                  f"MIX_ALPHA_RATE <- {b.get('MIX_ALPHA_RATE', 1)}",
                  f'MIX_MODEL <- "{b.get("MIX_MODEL") or "gamma"}"', f"MIX_W_CONC <- {b.get('MIX_W_CONC') or 1}",
                  f"CHARS <- {r['CHARS']}",
-                 f"ANAGENESIS <- {r['ANA']}"]
+                 f"ANAGENESIS <- {r['ANA']}",
+                 f"SYMMETRIC <- {r['SYM']}", f"EXTENDED <- {r['EXTENDED']}",
+                 f"SYM_A <- {b.get('SYM_A') or 1}", f"SYM_B <- {b.get('SYM_B') or 1}"]
         if r["CHARS"] == "true":
             n_chars = int(b["N_CHARS"])
             states = str(b.get("CHAR_STATES", "2")).split(",")

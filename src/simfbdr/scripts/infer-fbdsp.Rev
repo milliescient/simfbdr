@@ -41,6 +41,17 @@ if (ANAGENESIS) {
     lambda_a <- 0.0
 }
 
+# A speciation is symmetric with chance beta, constant in time and drawn from the batch's prior. Without
+# it, beta is zero, which is pure budding.
+if (!exists("SYMMETRIC")) SYMMETRIC <- FALSE
+if (!exists("EXTENDED")) EXTENDED <- TRUE
+if (SYMMETRIC) {
+    beta ~ dnBeta(SYM_A, SYM_B)
+    moves.append( mvBetaProbability(beta, weight=2) )
+} else {
+    beta <- 0.0
+}
+
 # each species draws a relative sampling rate at budding, from the batch's mixture, and an
 # anagenetic species keeps its ancestor's
 if (!exists("PSI_MIX")) PSI_MIX <- FALSE
@@ -48,12 +59,12 @@ source(BINDIR + "/mixture-prior.Rev")
 
 if (SKYLINE) {
     tr ~ dnFBDSP(taxa=taxa, lambda=lambda, mu=mu, psi=psi, rho=RHO, present=PRESENT,
-                 timeline=timeline, condition=COND, origin=origin, lambda_a=lambda_a,
-                 psiMixtureRates=mix_rates, psiMixtureWeights=mix_w)
+                 timeline=timeline, condition=COND, origin=origin, lambda_a=lambda_a, beta=beta,
+                 extended=EXTENDED, psiMixtureRates=mix_rates, psiMixtureWeights=mix_w)
 } else {
     tr ~ dnFBDSP(taxa=taxa, lambda=lambda, mu=mu, psi=psi, rho=RHO, present=PRESENT,
-                 condition=COND, origin=origin, lambda_a=lambda_a,
-                 psiMixtureRates=mix_rates, psiMixtureWeights=mix_w)
+                 condition=COND, origin=origin, lambda_a=lambda_a, beta=beta,
+                 extended=EXTENDED, psiMixtureRates=mix_rates, psiMixtureWeights=mix_w)
 }
 
 rec ~ dnFossilRecord(ranges=tr, reporting=REPORTING)
@@ -65,10 +76,14 @@ if (taxa.size() > 1) {
     moves.append( mvFNPR(tr, weight=taxa.size()) )
     moves.append( mvNodeTimeSlideUniform(tr, weight=taxa.size()) )
     moves.append( mvRootTimeSlideUniform(tr, origin=origin, weight=2) )
-    # which child continues its ancestor's species, which no other move relabels
-    moves.append( mvRotateNode(tr, weight=taxa.size()/5) )
+    # which child continues its ancestor's species, or with symmetric speciation neither
+    moves.append( mvRotateNode(tr, symmetric=SYMMETRIC, weight=taxa.size()/5) )
     # an exact draw of the topology given the ranges, valid under pure budding only
-    if (!ANAGENESIS) moves.append( mvBuddingTopologyRedraw(tr, weight=4) )
+    if (!ANAGENESIS && !SYMMETRIC) moves.append( mvBuddingTopologyRedraw(tr, weight=4) )
+}
+# a sampled tree has a sampled ancestor wherever a descendant is born after a range's last appearance
+if (!EXTENDED && !ANAGENESIS) {
+    moves.append( mvCollapseExpandFossilBranch(tr, origin, weight=taxa.size()/5) )
 }
 # an anagenetic event is a sampled ancestor, which the initial tree holds none of
 if (ANAGENESIS) {
@@ -173,7 +188,8 @@ if (ANAGENESIS) nsa := tr.numSampledAncestors()
 if (!exists("LATENTS")) LATENTS <- TRUE
 if (LATENTS) {
     bb   := tr.getOriginationTimes()
-    dd   := tr.getExtinctionTimes()
+    # a sampled tree integrates the extinctions out
+    if (EXTENDED) dd := tr.getExtinctionTimes()
     tau1 := tr.getFirstAppearances()
     tauK := tr.getLastAppearances()
     # under presence, 1 where a taxon's first and last appearances are one age: whether its one
