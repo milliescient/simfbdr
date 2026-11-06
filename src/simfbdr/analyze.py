@@ -179,9 +179,6 @@ def analyze(run, force=False, jobs=1, slots=None, slot_dir=None):
     if r["SYM"] == "true" and not b.get("SYM_A"):
         die(f"{rcfg} asks for symmetric speciation, and {batch} was simulated without it: the analysis "
             f"takes beta's prior from the batch.")
-    if r["SYM"] == "true" and r["EXTENDED"] == "true":
-        die(f"{rcfg} asks for symmetric speciation on an extended tree, which needs a collapse move rb does "
-            f"not have yet. Set inference.extended false.")
     if r["SYM"] == "true" and r["ANA"] == "true":
         die(f"{rcfg} asks for symmetric speciation with anagenesis, whose mvWilsonBalding is not yet checked "
             f"against symmetric nodes.")

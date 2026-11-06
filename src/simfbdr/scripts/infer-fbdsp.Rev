@@ -82,6 +82,11 @@ if (taxa.size() > 1) {
     # an exact draw of the topology given the ranges, valid under pure budding only
     if (!ANAGENESIS && !SYMMETRIC) moves.append( mvBuddingTopologyRedraw(tr, weight=4) )
 }
+# on an extended tree a sampled species that ends at a symmetric speciation is a sampled ancestor at that node,
+# which only this move reaches (rb a402cbf)
+if (SYMMETRIC && EXTENDED && taxa.size() > 1) {
+    moves.append( mvCollapseExpandSymmetric(tr, weight=taxa.size()/5) )
+}
 # a sampled tree has a sampled ancestor wherever a descendant is born after a range's last appearance
 if (!EXTENDED && !ANAGENESIS) {
     moves.append( mvCollapseExpandFossilBranch(tr, origin, weight=taxa.size()/5) )
