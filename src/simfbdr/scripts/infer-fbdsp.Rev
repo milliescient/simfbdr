@@ -194,8 +194,8 @@ if (SYMMETRIC) {
 if (!exists("LATENTS")) LATENTS <- TRUE
 if (LATENTS) {
     bb   := tr.getOriginationTimes()
-    # a sampled tree integrates the extinctions out
-    if (EXTENDED) dd := tr.getExtinctionTimes()
+    # on a sampled tree, which integrates the extinctions out, each is a draw from its conditional (rb bf7ddbc)
+    dd   := tr.getExtinctionTimes()
     tau1 := tr.getFirstAppearances()
     tauK := tr.getLastAppearances()
     # under presence, 1 where a taxon's first and last appearances are one age: whether its one
