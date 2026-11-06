@@ -77,8 +77,9 @@ if (taxa.size() > 1) {
     moves.append( mvNodeTimeSlideUniform(tr, weight=taxa.size()) )
     moves.append( mvRootTimeSlideUniform(tr, origin=origin, weight=2) )
     # which child continues its ancestor's species, or with symmetric speciation neither, which sets beta's
-    # mixing too: a latent move, at taxa.size() under symmetric speciation
-    moves.append( mvRotateNode(tr, symmetric=SYMMETRIC, weight=ifelse(SYMMETRIC, taxa.size(), taxa.size()/5)) )
+    # mixing too: a latent move, at taxa.size() under symmetric speciation. On a sampled tree with characters it
+    # also redraws each successor's first change of species (rb 5f9ed8d)
+    moves.append( mvSpeciationMode(tr, symmetric=SYMMETRIC, weight=ifelse(SYMMETRIC, taxa.size(), taxa.size()/5)) )
     # an exact draw of the topology given the ranges, valid under pure budding only
     if (!ANAGENESIS && !SYMMETRIC) moves.append( mvBuddingTopologyRedraw(tr, weight=4) )
 }
