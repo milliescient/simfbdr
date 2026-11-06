@@ -47,7 +47,7 @@ if (!exists("SYMMETRIC")) SYMMETRIC <- FALSE
 if (!exists("EXTENDED")) EXTENDED <- TRUE
 if (SYMMETRIC) {
     beta ~ dnBeta(SYM_A, SYM_B)
-    moves.append( mvBetaProbability(beta, weight=2) )
+    moves.append( mvBetaProbability(beta, weight=1) )
 } else {
     beta <- 0.0
 }
@@ -76,8 +76,9 @@ if (taxa.size() > 1) {
     moves.append( mvFNPR(tr, weight=taxa.size()) )
     moves.append( mvNodeTimeSlideUniform(tr, weight=taxa.size()) )
     moves.append( mvRootTimeSlideUniform(tr, origin=origin, weight=2) )
-    # which child continues its ancestor's species, or with symmetric speciation neither
-    moves.append( mvRotateNode(tr, symmetric=SYMMETRIC, weight=taxa.size()/5) )
+    # which child continues its ancestor's species, or with symmetric speciation neither, which sets beta's
+    # mixing too: a latent move, at taxa.size() under symmetric speciation
+    moves.append( mvRotateNode(tr, symmetric=SYMMETRIC, weight=ifelse(SYMMETRIC, taxa.size(), taxa.size()/5)) )
     # an exact draw of the topology given the ranges, valid under pure budding only
     if (!ANAGENESIS && !SYMMETRIC) moves.append( mvBuddingTopologyRedraw(tr, weight=4) )
 }
@@ -184,6 +185,11 @@ if (CHARS && CHAR_INFER == "mk") {
 org  := tr.getOrigin()
 # the anagenetic events; bb cannot count them, since it draws each origination along the stem
 if (ANAGENESIS) nsa := tr.numSampledAncestors()
+# the symmetric speciations the tree shows, and the expected number it hides, for their mixing
+if (SYMMETRIC) {
+    obs_bif := sum(tr.getObservedBifurcations())
+    hid_bif := sum(tr.getHiddenBifurcations())
+}
 # as for infer-fbdrp.Rev, a per-taxon latent is dropped by not creating it
 if (!exists("LATENTS")) LATENTS <- TRUE
 if (LATENTS) {
