@@ -68,7 +68,8 @@ if (SKYLINE) {
 rec ~ dnFossilRecord(ranges=tr, reporting=REPORTING)
 rec.clamp(taxa)
 
-# every age in the tree needs a move: the tips are extinction times, the internal nodes births
+# every age in the tree needs a move: the tips are extinction times, the internal nodes births. A sampled
+# ancestor's tip moves its node, and a symmetric node collapsed there with it
 moves.append( mvFossilTipTimeUniform(tr, origin=origin, weight=taxa.size()/5) )
 if (taxa.size() > 1) {
     moves.append( mvFNPR(tr, weight=taxa.size()) )
@@ -82,9 +83,9 @@ if (taxa.size() > 1) {
     if (!ANAGENESIS && !SYMMETRIC) moves.append( mvBuddingTopologyRedraw(tr, weight=4) )
 }
 # a sampled species that ends at a symmetric speciation is a sampled ancestor at that node, which only this
-# move reaches (rb a402cbf)
+# move reaches
 if (SYMMETRIC && taxa.size() > 1) {
-    moves.append( mvCollapseExpandSymmetric(tr, weight=taxa.size()/5) )
+    moves.append( mvCollapseExpandBifurcation(tr, weight=taxa.size()/5) )
 }
 # sampled ancestors, wherever a range ends by anagenesis or a symmetric speciation with one sampled daughter
 if (ANAGENESIS || SYMMETRIC) {
@@ -161,16 +162,16 @@ if (CHARS && CHAR_INFER == "mk") {
     # By branch: the Poisson mean of the speciations that left no sample, and the observed event
     # that began the species. A mean of zero is no Poisson at all, so each carries a floor that
     # pins its count to zero without putting an impossible state in reach.
-    hb := tr.getHiddenBuddings()
-    ob := tr.getObservedBuddings()
+    hb := tr.getHiddenSpeciation(mode="budding")
+    ob := tr.getObservedSpeciation(mode="budding")
     # a symmetric speciation changes each daughter with epsilon, as a budding changes its new species
     if (SYMMETRIC) {
-        hs := tr.getHiddenBifurcations()
-        os := tr.getObservedBifurcations()
+        hs := tr.getHiddenSpeciation(mode="bifurcation")
+        os := tr.getObservedSpeciation(mode="bifurcation")
     }
     if (ANAGENESIS) {
-        ha := tr.getHiddenAnageneses()
-        oa := tr.getObservedAnageneses()
+        ha := tr.getHiddenSpeciation(mode="anagenesis")
+        oa := tr.getObservedSpeciation(mode="anagenesis")
     }
     for (i in 1:hb.size()) {
         kb[i] ~ dnPoisson(hb[i] + 1E-10)
@@ -201,15 +202,13 @@ org  := tr.getOrigin()
 if (ANAGENESIS) nsa := tr.numSampledAncestors()
 # the symmetric speciations the tree shows, and the expected number it hides, for their mixing
 if (SYMMETRIC) {
-    obs_bif := sum(tr.getObservedBifurcations())
-    # the hidden counts are not yet defined under a psi mixture with symmetric speciation
-    if (!PSI_MIX) hid_bif := sum(tr.getHiddenBifurcations())
+    obs_bif := sum(tr.getObservedSpeciation(mode="bifurcation"))
+    hid_bif := sum(tr.getHiddenSpeciation(mode="bifurcation"))
 }
 # as for infer-fbdrp.Rev, a per-taxon latent is dropped by not creating it
 if (!exists("LATENTS")) LATENTS <- TRUE
 if (LATENTS) {
     bb   := tr.getOriginationTimes()
-    # on a sampled tree, which integrates the extinctions out, each is a draw from its conditional (rb bf7ddbc)
     dd   := tr.getExtinctionTimes()
     tau1 := tr.getFirstAppearances()
     tauK := tr.getLastAppearances()
