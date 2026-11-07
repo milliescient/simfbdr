@@ -70,7 +70,7 @@ rec.clamp(taxa)
 
 # every age in the tree needs a move: the tips are extinction times, the internal nodes births. A sampled
 # ancestor's tip moves its node, and a symmetric node collapsed there with it
-moves.append( mvFossilTipTimeUniform(tr, origin=origin, weight=taxa.size()/5) )
+moves.append( mvFossilTipTimeUniform(tr, origin=origin, weight=taxa.size()) )
 if (taxa.size() > 1) {
     moves.append( mvFNPR(tr, weight=taxa.size()) )
     moves.append( mvNodeTimeSlideUniform(tr, weight=taxa.size()) )
