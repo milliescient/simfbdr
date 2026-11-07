@@ -440,11 +440,10 @@ relabel_species <- function(sim, fossils, lambda_a, beta = 0) {
 }
 
 # A replicate's relative rate and weight of each component. NULL weights are equal. invisible:
-# (0, r nu_high, nu_high), with nu_high = 1/(w2 r + w3) so that psi stays the mean rate.
+# (0, r, 1), so psi is the rate of the most sampled class.
 mixture <- function(th) {
   if (MIX_MODEL == "gamma") return(list(rate = discretized_gamma(th$alpha, MIX_K), weight = NULL))
-  high <- 1 / (th$mix_w[2] * th$mix_r + th$mix_w[3])
-  list(rate = c(0, th$mix_r * high, high), weight = th$mix_w)
+  list(rate = c(0, th$mix_r, 1), weight = th$mix_w)
 }
 
 # Each species' component, drawn at its birth and independent of its parent's. NULL without a
