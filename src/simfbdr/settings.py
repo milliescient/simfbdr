@@ -120,9 +120,6 @@ RUN_SETTINGS = [
     ("SYM", "inference.symmetric",
      "estimate beta, the chance a speciation is symmetric, with the batch's prior; false analyzes the "
      "data as budding. fbdsp only"),
-    ("EXTENDED", "inference.extended",
-     "true: the tree's tips are extinction times; false: they are last appearances and the extinctions "
-     "are integrated out. fbdsp only"),
     ("CHARS", "inference.characters",
      "analyze the batch's characters on the tree, estimating epsilon; fbdsp only"),
     ("EPSILON_A", "inference.epsilon_a",
@@ -199,7 +196,7 @@ CHOICES = {"RANGE_START": ("origination", "divergence"), "MODEL": ("fbdrp", "bds
            "RETENTION": ("true", "false"),
            "MIX_MODEL": ("gamma", "invisible"),
            "ANAGENESIS": ("true", "false"), "ANA": ("true", "false"),
-           "SYM": ("true", "false"), "EXTENDED": ("true", "false"),
+           "SYM": ("true", "false"),
            "COND": ("time", "sampling", "survival", "nTaxa"),
            "TAXA_COUNT": ("fossil", "record"),
            "ORIGIN_PRIOR": ("uniform", "exponential", "none"),

@@ -33,8 +33,6 @@ inference:
                                 # data as pure budding. fbdsp only
   symmetric: false              # true estimates beta, the chance a speciation is symmetric, under the
                                 # batch's prior. fbdsp only
-  extended: true                # false makes the tips last appearances and integrates the extinctions
-                                # out, which needs sampled ancestors even under budding. fbdsp only
   characters: false             # true adds the batch's characters on the tree and estimates epsilon,
                                 # under the character_model below. fbdsp only
   character_coding: all         # variable conditions each character on varying, for a batch with

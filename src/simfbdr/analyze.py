@@ -174,8 +174,8 @@ def analyze(run, force=False, jobs=1, slots=None, slot_dir=None):
     if r["ANA"] == "true" and b.get("ANAGENESIS") != "true":
         die(f"{rcfg} asks for anagenesis, and {batch} was simulated without it: the analysis "
             f"takes the anagenetic rate's prior from the batch.")
-    if (r["SYM"] == "true" or r["EXTENDED"] == "false") and r["MODEL"] != "fbdsp":
-        die(f"{rcfg} asks for symmetric speciation or a sampled tree, which only the tree process has: model fbdsp.")
+    if r["SYM"] == "true" and r["MODEL"] != "fbdsp":
+        die(f"{rcfg} asks for symmetric speciation, which only the tree process has: model fbdsp.")
     if r["SYM"] == "true" and not b.get("SYM_A"):
         die(f"{rcfg} asks for symmetric speciation, and {batch} was simulated without it: the analysis "
             f"takes beta's prior from the batch.")
@@ -273,7 +273,7 @@ def analyze(run, force=False, jobs=1, slots=None, slot_dir=None):
                  f'MIX_MODEL <- "{b.get("MIX_MODEL") or "gamma"}"', f"MIX_W_CONC <- {b.get('MIX_W_CONC') or 1}",
                  f"CHARS <- {r['CHARS']}",
                  f"ANAGENESIS <- {r['ANA']}",
-                 f"SYMMETRIC <- {r['SYM']}", f"EXTENDED <- {r['EXTENDED']}",
+                 f"SYMMETRIC <- {r['SYM']}",
                  f"SYM_A <- {b.get('SYM_A') or 1}", f"SYM_B <- {b.get('SYM_B') or 1}"]
         if r["CHARS"] == "true":
             n_chars = int(b["N_CHARS"])
