@@ -160,29 +160,19 @@ if (CHARS && CHAR_INFER == "mk") {
     }
 
     # By branch: the Poisson mean of the speciations that left no sample, and the observed event
-    # that began the species. A mean of zero is no Poisson at all, so each carries a floor that
+    # that began the species. A budding and a symmetric speciation begin a branch's species alike, so
+    # they are one cladogenetic count. A mean of zero is no Poisson at all, so each carries a floor that
     # pins its count to zero without putting an impossible state in reach.
-    hb := tr.getHiddenSpeciation(mode="budding")
-    ob := tr.getObservedSpeciation(mode="budding")
-    # a symmetric speciation changes each daughter with epsilon, as a budding changes its new species
-    if (SYMMETRIC) {
-        hs := tr.getHiddenSpeciation(mode="bifurcation")
-        os := tr.getObservedSpeciation(mode="bifurcation")
-    }
+    hc := tr.getHiddenSpeciation(mode="cladogenesis")
+    oc := tr.getObservedSpeciation(mode="cladogenesis")
     if (ANAGENESIS) {
         ha := tr.getHiddenSpeciation(mode="anagenesis")
         oa := tr.getObservedSpeciation(mode="anagenesis")
     }
-    for (i in 1:hb.size()) {
-        kb[i] ~ dnPoisson(hb[i] + 1E-10)
-        moves.append( mvRandomNaturalWalk(kb[i], weight=1) )
-        if (SYMMETRIC) {
-            ks[i] ~ dnPoisson(hs[i] + 1E-10)
-            moves.append( mvRandomNaturalWalk(ks[i], weight=1) )
-            cl[i] := kb[i] + ob[i] + ks[i] + os[i]
-        } else {
-            cl[i] := kb[i] + ob[i]
-        }
+    for (i in 1:hc.size()) {
+        kc[i] ~ dnPoisson(hc[i] + 1E-10)
+        moves.append( mvRandomNaturalWalk(kc[i], weight=1) )
+        cl[i] := kc[i] + oc[i]
         if (ANAGENESIS) {
             ka[i] ~ dnPoisson(ha[i] + 1E-10)
             moves.append( mvRandomNaturalWalk(ka[i], weight=1) )
@@ -226,7 +216,7 @@ if (LATENTS) {
     # the per-branch counts and the vectors they come from are nuisances with no truth to rank, and
     # there are seven of them per branch
     monitors.append( mnModel(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN,
-                             exclude=["kb", "ka", "ks", "hb", "ha", "hs", "ob", "oa", "os", "cl", "brl", "ev", "eva"]) )
+                             exclude=["kc", "ka", "hc", "ha", "oc", "oa", "cl", "brl", "ev", "eva"]) )
 } else if (CHARS && CHAR_INFER == "mk" && ANAGENESIS) {
     monitors.append( mnFile(filename=OUTDIR + "/rep_" + rep + ".log", printgen=PRINTGEN,
                             lambda, mu, psi, org, char_rate, lambda_a, nsa) )
