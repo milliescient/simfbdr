@@ -170,11 +170,11 @@ if (CHARS && CHAR_INFER == "mk") {
         oa := tr.getObservedSpeciation(mode="anagenesis")
     }
     for (i in 1:hc.size()) {
-        kc[i] ~ dnPoisson(hc[i] + 1E-10)
+        kc[i] ~ dnPoisson(hc[i])
         moves.append( mvRandomNaturalWalk(kc[i], weight=1) )
         cl[i] := kc[i] + oc[i]
         if (ANAGENESIS) {
-            ka[i] ~ dnPoisson(ha[i] + 1E-10)
+            ka[i] ~ dnPoisson(ha[i])
             moves.append( mvRandomNaturalWalk(ka[i], weight=1) )
             brl[i] := cl[i] * ev + (ka[i] + oa[i]) * eva
         } else {
