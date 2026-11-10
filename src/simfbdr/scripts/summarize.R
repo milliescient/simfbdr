@@ -35,7 +35,31 @@ suppressMessages({
   library(posterior)
   library(gtools)   # mixedsort is essential for matching output to true values
   library(ggplot2)
+  library(parallel)
 })
+
+# replicates are read in parallel, by SUMMARIZE_JOBS processes (simfbdr summarize --jobs)
+JOBS <- max(1L, as.integer(Sys.getenv("SUMMARIZE_JOBS", detectCores())))
+
+# a worker's error stops the run, and a worker that died returns NULL, which is one too
+par_map <- function(x, f, ...) {
+  out <- mclapply(x, f, ..., mc.cores = JOBS)
+  for (o in out) if (is.null(o) || inherits(o, "try-error")) stop(if (is.null(o)) "a worker died" else o)
+  out
+}
+
+# a log's column names exactly as RevBayes wrote them
+log_header <- function(f) strsplit(readLines(f, n = 1), "\t", fixed = TRUE)[[1]]
+
+# the columns at positions cols, parsing no others. colClasses recycles, so it is built from
+# this file's own header
+read_columns <- function(f, cols, hdr = log_header(f)) {
+  read.table(f, header = TRUE, sep = "\t", check.names = FALSE,
+             colClasses = ifelse(seq_along(hdr) %in% cols, "numeric", "NULL"))
+}
+
+# a finished log carries one header plus GENS/PRINTGEN + 1 samples
+complete_lines_of <- function(mf) as.integer(mf$GENS) / as.integer(mf$PRINTGEN) + 2L
 
 latent_order <- c("d", "tau1", "b")   # youngest to oldest
 
@@ -149,32 +173,41 @@ ana_share <- function(d, ni) {
   d
 }
 
-# the skyline rates, one value per replicate
-rate_stats <- function(mf, ids, logs) {
+# the names the rates have always been read under: read.table's, with RevBayes's brackets put back
+rate_names <- function(hdr, ni) {
+  nm <- gsub("\\[$", "]", gsub("\\.", "[", make.names(hdr, unique = TRUE)))
+  # one interval is not a skyline, so the Rev template declares scalar rates and the log
+  # names them bare. Everything downstream is indexed, so index them here.
+  if (ni == 1) for (a in c("lambda", "mu", "psi")) nm[nm == a] <- paste0(a, "[1]")
+  nm
+}
+
+# what is scored once per replicate, and its truth, from one log's header
+rate_plan <- function(mf, hdr) {
   sim_dir <- mf$batch_dir
   rates <- rates_of(mf)
 
   # the simulator records the origin as `age`; score it alongside the rates when it was logged
-  probe <- read.table(logs[[1]], header = TRUE, nrows = 1)
-  if ("org" %in% names(probe)) rates <- c(rates, "org")
+  probe <- make.names(hdr, unique = TRUE)
+  if ("org" %in% probe) rates <- c(rates, "org")
   # a gamma rate parameter the batch left out is drawn per replicate and estimated, so it is a
   # parameter like any other and its ranks have to be uniform too
   for (h in c("gamma_rate_lambda", "gamma_rate_mu")) {
-    if (h %in% names(probe)) rates <- c(rates, h)
+    if (h %in% probe) rates <- c(rates, h)
   }
   # so are the psi mixture's shape, the characters' chance to change and the anagenetic rate, when
   # the run estimated them
   for (h in c("alpha", "epsilon", "epsilon_a", "lambda_a", "retention", "char_rate", "turnover", "mix_r")) {
-    if (h %in% names(probe)) rates <- c(rates, h)
+    if (h %in% probe) rates <- c(rates, h)
   }
   # the invisible mixture's weights, a simplex, ranked component by component
-  rates <- c(rates, sub("^mix_w\\.(\\d+)\\.$", "mix_w[\\1]", grep("^mix_w\\.\\d+\\.$", names(probe), value = TRUE)))
+  rates <- c(rates, sub("^mix_w\\.(\\d+)\\.$", "mix_w[\\1]", grep("^mix_w\\.\\d+\\.$", probe, value = TRUE)))
 
   # with anagenesis, A, and with both chances to change too, S, in each interval
   ni <- as.integer(mf$NINTERVALS)
   share <- character(0)
-  if ("lambda_a" %in% names(probe)) share <- paste0("A[", seq_len(ni), "]")
-  if (all(c("epsilon", "epsilon_a", "lambda_a") %in% names(probe))) share <- c(share, paste0("S[", seq_len(ni), "]"))
+  if ("lambda_a" %in% probe) share <- paste0("A[", seq_len(ni), "]")
+  if (all(c("epsilon", "epsilon_a", "lambda_a") %in% probe)) share <- c(share, paste0("S[", seq_len(ni), "]"))
 
   true_vals <- read.table(file.path(sim_dir, "true_vals.tsv"), header = TRUE)
   colnames(true_vals) <- gsub("(\\D+)(\\d+)$", "\\1[\\2]", colnames(true_vals))
@@ -184,42 +217,47 @@ rate_stats <- function(mf, ids, logs) {
   # a run under another character model than the batch's estimates parameters that have no truth
   rates <- intersect(rates, names(true_vals)); share <- intersect(share, names(true_vals))
 
-  draws <- Map(function(f) {
-    d <- read.table(f, header = TRUE)
-    colnames(d) <- gsub("\\[$", "]", gsub("\\.", "[", colnames(d)))
-    # one interval is not a skyline, so the Rev template declares scalar rates and the log
-    # names them bare. Everything downstream is indexed, so index them here.
-    if (as.integer(mf$NINTERVALS) == 1) {
-      for (a in c("lambda", "mu", "psi")) {
-        if (a %in% colnames(d)) colnames(d)[colnames(d) == a] <- paste0(a, "[1]")
-      }
-    }
-    d <- ana_share(d, ni)
-    posterior::as_draws_matrix(d[post_burnin(nrow(d)), c(rates, share)])
-  }, logs)
+  list(cols = c(rates, share), true_vals = true_vals, ni = ni)
+}
 
-  check_alignment(draws, true_vals, ni, ids)
-  stats_for(draws, posterior::as_draws_matrix(true_vals[ids, c(rates, share)]))
+# one log's posterior check and its post-burn-in draws of the scored columns, in one pass
+read_rates <- function(f, plan, complete_lines) {
+  if (length(readLines(f)) != complete_lines) return(list(status = "short"))
+  hdr <- log_header(f)
+  nm <- rate_names(hdr, plan$ni)
+  keep <- which(nm %in% c("Posterior", plan$cols))
+  d <- read_columns(f, keep, hdr)
+  colnames(d) <- nm[keep]
+  # a chain stranded at -inf accepts everything and its rates diffuse, but its log is still
+  # full length, so length alone does not catch it
+  if (!all(is.finite(d$Posterior))) return(list(status = "nonfinite"))
+  d <- ana_share(d, plan$ni)
+  list(status = "ok", draws = posterior::as_draws_matrix(d[post_burnin(nrow(d)), plan$cols]))
+}
+
+# the skyline rates, one value per replicate
+rate_stats <- function(plan, ids, draws) {
+  check_alignment(draws, plan$true_vals, plan$ni, ids)
+  stats_for(draws, posterior::as_draws_matrix(plan$true_vals[ids, plan$cols]))
 }
 
 # b, d and tau1, one extinct taxon per replicate. Returns NULL if nothing usable was logged.
 latent_stats <- function(mf, ids) {
-  from <- list()
   sim_dir <- mf$batch_dir
   present <- suppressWarnings(as.numeric(mf$PRESENT))   # "none" when the batch sets no present
   if (!length(present) || is.na(present)) present <- 0
   status_is_data <- is.null(mf$RHO) || as.numeric(mf$RHO) == 1
   nonext <- is_nonextended(mf)
   load(file.path(sim_dir, "sim_list.RData"))   # -> sims
-  draws <- list(); truth <- list()
+  n_draw <- complete_lines_of(mf) - 1L          # every log in ids is complete
 
-  set.seed(20260719)   # the per-replicate taxon draw, fixed so the figures reproduce
-
-  for (rep in ids) {
+  # a replicate's scorable taxa, each with its log columns and its truth, read from the header
+  # alone unless b's pinning has to be checked
+  candidates <- function(rep) {
     spec <- file.path(sim_dir, mf$occurrences, sprintf("taxa_%d.tsv", rep))
     rng <- file.path(sim_dir, "true_ranges", sprintf("ranges_%d.tsv", rep))
     log <- file.path(mf$run_dir, "output", sprintf("rep_%d.log", rep))
-    if (!all(file.exists(spec, rng, log))) next
+    if (!all(file.exists(spec, rng, log))) return(list())
 
     # RevBayes orders taxa by byte order of name (t10 precedes t2); radix sorts in the C locale
     taxa <- sort(unique(as.character(read.table(spec, header = TRUE)$taxon)), method = "radix")
@@ -228,35 +266,27 @@ latent_stats <- function(mf, ids) {
     n_taxa <- length(taxa)
     sim_idx <- as.integer(sub("t", "", taxa))   # simulator indices of the sampled taxa
 
-    ll <- try(read.table(log, header = TRUE, sep = "\t", check.names = FALSE), silent = TRUE)
-    if (inherits(ll, "try-error")) next
-    tcols <- grep("^tau1\\[", names(ll))
-    if (length(tcols) != n_taxa || nrow(ll) < 50) next
-    n_draw <- nrow(ll)
-    keep <- post_burnin(n_draw)
-
-    bcols <- grep("^bb\\[", names(ll))
-    dcols <- grep("^dd\\[", names(ll))
-
-    if (length(bcols) == n_taxa && length(dcols) == n_taxa) {
-      # b and d are deterministic nodes in the mnModel log, so they work for a tree model too
-      b_mat <- as.matrix(ll[keep, bcols, drop = FALSE])
-      d_mat <- as.matrix(ll[keep, dcols, drop = FALSE])
-    } else if (nonext && length(bcols) == n_taxa) {
-      b_mat <- as.matrix(ll[keep, bcols, drop = FALSE])
-      d_mat <- NULL
-    } else {
-      next   # the run did not monitor the per-taxon latents, so there are no latent ranks
-    }
-
-    t_mat <- as.matrix(ll[keep, tcols, drop = FALSE])
+    hdr <- log_header(log)
+    tcols <- grep("^tau1\\[", hdr)
+    if (length(tcols) != n_taxa || n_draw < 50) return(list())
+    # b and d are deterministic nodes in the mnModel log, so they work for a tree model too
+    bcols <- grep("^bb\\[", hdr)
+    dcols <- grep("^dd\\[", hdr)
+    if (length(bcols) != n_taxa || (length(dcols) != n_taxa && !nonext))
+      return(list())   # the run did not monitor the per-taxon latents, so there are no latent ranks
 
     # In a non-extended tree an I[i] taxon's b is pinned to its sampled ancestor's range end, with
     # the speciation that separates them integrated out by the I-set term, so b is a structural
     # node age there rather than an estimated birth. Detect it as b coinciding with some taxon's
     # tau_K. This is a posterior summary, hence a function of the data, so the split is legitimate.
-    kcols <- grep("^tauK\\[", names(ll))
-    k_mat <- if (nonext && length(kcols) == n_taxa) as.matrix(ll[keep, kcols, drop = FALSE]) else NULL
+    kcols <- grep("^tauK\\[", hdr)
+    b_mat <- k_mat <- NULL
+    if (nonext && length(kcols) == n_taxa) {
+      ll <- read_columns(log, c(bcols, kcols), hdr)
+      keep <- post_burnin(nrow(ll))
+      b_mat <- as.matrix(ll[keep, hdr[bcols], drop = FALSE])
+      k_mat <- as.matrix(ll[keep, hdr[kcols], drop = FALSE])
+    }
 
     # Which start the run logged decides which truth scores it, and the two differ by the chain
     # of unsampled ancestors. A divergence is where this lineage last branched off a SAMPLED
@@ -296,7 +326,7 @@ latent_stats <- function(mf, ids) {
       true_b_all[rest] <- off_root[rest]
     }
 
-    cand_draws <- list(); cand_truth <- list(); cand_taxon <- list()
+    cands <- list()
     for (j in seq_along(taxa)) {
       k <- as.integer(sub("t", "", taxa[j]))
       true_d <- max(if (is.na(s$TE[k])) 0 else s$TE[k], present)
@@ -311,32 +341,47 @@ latent_stats <- function(mf, ids) {
       }
       first_age <- ranges$first_age[as.character(ranges$taxon) == taxa[j]]
       if (length(first_age) != 1) next
-      cand_draws[[length(cand_draws) + 1]] <- posterior::as_draws_matrix(
-        if (nonext) cbind(b = b_mat[, j], tau1 = t_mat[, j])
-        else        cbind(b = b_mat[, j], d = d_mat[, j], tau1 = t_mat[, j]))
-      true_b <- true_b_all[j]
-
-      cand_truth[[length(cand_truth) + 1]] <-
-        if (nonext) c(b = true_b, tau1 = first_age)
-        else        c(b = true_b, d = true_d, tau1 = first_age)
-      cand_taxon[[length(cand_taxon) + 1]] <- taxa[j]
+      cands[[length(cands) + 1]] <- if (nonext)
+        list(cols = c(b = bcols[j], tau1 = tcols[j]), truth = c(b = true_b_all[j], tau1 = first_age), taxon = taxa[j])
+      else
+        list(cols = c(b = bcols[j], d = dcols[j], tau1 = tcols[j]),
+             truth = c(b = true_b_all[j], d = true_d, tau1 = first_age), taxon = taxa[j])
     }
-    if (!length(cand_draws)) next
-
-    # one taxon per replicate: taxa within a replicate share a history, so their ranks are
-    # not independent and pooling them narrows the band the ranks are judged against
-    j <- sample.int(length(cand_draws), 1)
-    draws[[length(draws) + 1]] <- cand_draws[[j]]
-    truth[[length(truth) + 1]] <- cand_truth[[j]]
-    # sim_id is a position in this list, not a replicate number, so the pair is recorded here
-    # or there is no way to split a rank by anything about the record it came from
-    from[[length(from) + 1]] <- data.frame(sim_id = length(draws), rep = rep,
-                                           taxon = cand_taxon[[j]], n_taxa = n_taxa)
+    list(cands = cands, n_taxa = n_taxa)
   }
-  if (!length(draws)) return(NULL)
+  found <- par_map(ids, candidates)
+
+  # one taxon per replicate: taxa within a replicate share a history, so their ranks are
+  # not independent and pooling them narrows the band the ranks are judged against.
+  # Drawn here in replicate order, so the same seed picks the same taxa as a serial read.
+  set.seed(20260719)   # the per-replicate taxon draw, fixed so the figures reproduce
+  picked <- list()
+  for (i in seq_along(ids)) {
+    cands <- found[[i]]$cands
+    if (!length(cands)) next
+    picked[[length(picked) + 1]] <- c(cands[[sample.int(length(cands), 1)]],
+                                      rep = ids[i], n_taxa = found[[i]]$n_taxa)
+  }
+  if (!length(picked)) return(NULL)
+
+  # the chosen taxon's three columns, and nothing else, from each log
+  draws <- par_map(picked, function(p) {
+    log <- file.path(mf$run_dir, "output", sprintf("rep_%d.log", p$rep))
+    hdr <- log_header(log)
+    ll <- read_columns(log, p$cols, hdr)
+    m <- as.matrix(ll[post_burnin(nrow(ll)), hdr[p$cols], drop = FALSE])
+    colnames(m) <- names(p$cols)
+    posterior::as_draws_matrix(m)
+  })
+
   cat("   latents: one", if (status_is_data) "extinct taxon" else "taxon", "from each of", length(draws), "replicates\n")
-  res <- stats_for(draws, posterior::as_draws_matrix(do.call(rbind, truth)))
-  res$scored_from <- do.call(rbind, from)
+  res <- stats_for(draws, posterior::as_draws_matrix(do.call(rbind, lapply(picked, `[[`, "truth"))))
+  # sim_id is a position in this list, not a replicate number, so the pair is recorded here
+  # or there is no way to split a rank by anything about the record it came from
+  res$scored_from <- data.frame(sim_id = seq_along(picked),
+                                rep = vapply(picked, `[[`, 0L, "rep"),
+                                taxon = vapply(picked, `[[`, "", "taxon"),
+                                n_taxa = vapply(picked, `[[`, 0L, "n_taxa"))
   # youngest to oldest, the order the range is read in (rank_summary splits on this;
   # the plots take the same order through the variables= argument)
   res$stats$variable <- factor(res$stats$variable, levels = latent_order_for(mf))
@@ -400,16 +445,15 @@ make_figures <- function(run) {
   out <- file.path(run, "results")
   dir.create(out, recursive = TRUE, showWarnings = FALSE)
 
-  # a finished log carries one header plus GENS/PRINTGEN + 1 samples
-  complete_lines <- as.integer(mf$GENS) / as.integer(mf$PRINTGEN) + 2L
   logs <- mixedsort(list.files(file.path(run, "output"),
                                pattern = "^rep_.*log$", full.names = TRUE))
-  logs <- logs[sapply(logs, function(f) length(readLines(f)) == complete_lines)]
-  # a chain stranded at -inf accepts everything and its rates diffuse, but its log is still
-  # full length, so length alone does not catch it
-  finite <- sapply(logs, function(f) all(is.finite(read.table(f, header = TRUE)$Posterior)))
-  if (any(!finite)) cat("  ", sum(!finite), "rep(s) dropped: non-finite posterior\n")
-  logs <- logs[finite]
+  if (!length(logs)) { cat(run, ": no complete logs, skipping\n"); return(invisible()) }
+  plan <- rate_plan(mf, log_header(logs[[1]]))
+  got <- par_map(logs, read_rates, plan, complete_lines_of(mf))
+  status <- vapply(got, `[[`, "", "status")
+  if (any(status == "nonfinite")) cat("  ", sum(status == "nonfinite"), "rep(s) dropped: non-finite posterior\n")
+  logs <- logs[status == "ok"]
+  draws <- setNames(lapply(got[status == "ok"], `[[`, "draws"), logs)
   if (!length(logs)) { cat(run, ": no complete logs, skipping\n"); return(invisible()) }
   ids <- as.integer(gsub("[^0-9]", "", basename(logs)))
 
@@ -417,7 +461,7 @@ make_figures <- function(run) {
                    mf$REPORTING, mf$INFER)
   cat(label, ":", length(logs), "complete reps\n")
 
-  res <- rate_stats(mf, ids, logs)
+  res <- rate_stats(plan, ids, draws)
   lat <- latent_stats(mf, ids)
   if (is.null(lat)) cat("   no tau1 traces: plotting the rates only\n")
 

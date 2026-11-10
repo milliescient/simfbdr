@@ -112,6 +112,7 @@ def main(argv=None):
     p.add_argument("paths", nargs="+")
     p = sub.add_parser("summarize", help="SBC ranks, coverage and diagnostics")
     p.add_argument("runs", nargs="+")
+    p.add_argument("--jobs", type=int, help="logs read in parallel (default: every core)")
     p = sub.add_parser("ranks", help="mean rank per parameter")
     p.add_argument("run")
     p = sub.add_parser("config", help="the settings a config can hold")
@@ -140,6 +141,8 @@ def main(argv=None):
     elif a.cmd == "status":
         cmd_status(a)
     elif a.cmd == "summarize":
+        if a.jobs:
+            os.environ["SUMMARIZE_JOBS"] = str(a.jobs)
         run_script("summarize.R", a.runs)
     elif a.cmd == "ranks":
         from . import ranks
