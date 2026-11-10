@@ -203,6 +203,11 @@ MAX_LINEAGES <- cfg_opt("MAX_LINEAGES", Inf)
 # Ceiling on the work one bd.sim call may do, counted in the waiting times it draws. A count
 # and not a number of seconds, so which draws are refused follows from the seed alone.
 SIM_MAX_DRAWS <- cfg_opt("SIM_MAX_DRAWS", Inf)
+# Ceiling on lineages a simulation may realize, checked while it runs. It reads the unseen tree,
+# so it is safe only far above any accepted record: refused.tsv lets that be checked.
+MAX_REALIZED <- cfg_opt("MAX_REALIZED", Inf)
+# unset keeps the old behavior, where max_expected_lineages capped the realized tree too
+realized_cap <- if (is.finite(MAX_REALIZED)) MAX_REALIZED else MAX_LINEAGES
 if (Sys.getenv("SIM_TIMEOUT") != "")
   stop("SIM_TIMEOUT is a wall-clock limit, so a batch made under it does not reproduce from ",
        "its seeds. Set SIM_MAX_DRAWS instead: 100000 refuses about what 20 seconds did, 200000 ",
@@ -522,12 +527,46 @@ sim_draws_left <- Inf     # Inf outside a bounded call, so nothing else that sam
 sim_draws_most <- 0       # the most a call that finished used, which is what to set the ceiling by
 over_budget <- structure(class = c("sim_over_budget", "error", "condition"),
                          list(message = "bd.sim went over SIM_MAX_DRAWS", call = NULL))
-if (is.finite(SIM_MAX_DRAWS)) {
+over_lineages <- structure(class = c("sim_over_lineages", "error", "condition"),
+                           list(message = "bd.sim went over MAX_REALIZED", call = NULL))
+# paleobuddy's own nFinal ceiling retries the SAME theta, which conditions on the unseen tree,
+# so the ceiling is enforced here and the caller redraws. rexp.var has a scalar argument TS of
+# its own, so the species list is found in the frame holding bd.sim.general's sCount.
+sim_frame <- function() {
+  for (f in rev(sys.frames())) if (exists("sCount", envir = f, inherits = FALSE)) return(f)
+  NULL
+}
+lineage_cap_on <- FALSE
+sim_abort <- list(lineages = NA, time = NA, reason = NA)
+if (is.finite(SIM_MAX_DRAWS) || is.finite(MAX_REALIZED)) {
   invisible(suppressMessages(trace("rexp.var", where = asNamespace("paleobuddy"), print = FALSE,
                          tracer = function() {
                            sim_draws_left <<- sim_draws_left - 1
-                           if (sim_draws_left < 0) stop(over_budget)
+                           over <- sim_draws_left < 0
+                           if (over || lineage_cap_on) {
+                             f <- sim_frame()
+                             ts <- if (is.null(f)) NULL else get("TS", envir = f)
+                             sim_abort <<- list(lineages = length(ts), reason = NA,
+                                                time = if (is.null(f)) NA else get("tNow", envir = f))
+                           }
+                           if (over) stop(over_budget)
+                           if (lineage_cap_on && length(ts) > MAX_REALIZED) stop(over_lineages)
                          })))
+}
+sim_over_lin <- 0
+# One row per refused draw: why, how far the simulation got (time is Myr after the origin, as
+# paleobuddy counts it), and theta, youngest first as in
+# true_vals.tsv. Written beside the batch, so a ceiling's cost to the prior can be measured.
+refusals <- list()
+cur_rep <- NA
+refuse <- function(reason, th, lineages = NA, time = NA, expected = NA) {
+  k <- length(th$lambda)
+  r <- c(list(rep = cur_rep, reason = reason, lineages = lineages, time = time,
+              expected = expected),
+         setNames(as.list(rev(th$lambda)), paste0("lambda", 1:k)),
+         setNames(as.list(rev(th$mu)), paste0("mu", 1:k)),
+         setNames(as.list(rev(th$psi)), paste0("psi", 1:k)), list(age = th$age))
+  refusals[[length(refusals) + 1]] <<- as.data.frame(r)
 }
 # draws refused by the expected-clade filter. This one is a function of theta alone, so it
 # truncates the prior and the ranks are non-uniform by exactly that much: the number belongs
@@ -542,14 +581,22 @@ bd_sim_bounded <- function(n0, lambda, mu, tMax, lShifts, mShifts, nFinal) {
   if (length(mu) < 2)     mShifts <- NULL
   call_it <- function() bd.sim(n0, lambda, mu, tMax, lShifts = lShifts,
                                mShifts = mShifts, nFinal = c(nFinal, Inf))
-  if (!is.finite(SIM_MAX_DRAWS)) return(call_it())
+  if (!is.finite(SIM_MAX_DRAWS) && !is.finite(MAX_REALIZED)) return(call_it())
   sim_draws_left <<- SIM_MAX_DRAWS
-  on.exit(sim_draws_left <<- Inf)
+  lineage_cap_on <<- is.finite(MAX_REALIZED)
+  on.exit({ sim_draws_left <<- Inf; lineage_cap_on <<- FALSE })
+  sim_abort <<- list(lineages = NA, time = NA, reason = NA)
   sim <- tryCatch(call_it(), sim_over_budget = function(e) {
     sim_over <<- sim_over + 1
+    sim_abort$reason <<- "draws"
+    NULL
+  }, sim_over_lineages = function(e) {
+    sim_over_lin <<- sim_over_lin + 1
+    sim_abort$reason <<- "lineages"
     NULL
   })
-  if (!is.null(sim)) sim_draws_most <<- max(sim_draws_most, SIM_MAX_DRAWS - sim_draws_left)
+  if (!is.null(sim) && is.finite(SIM_MAX_DRAWS))
+    sim_draws_most <<- max(sim_draws_most, SIM_MAX_DRAWS - sim_draws_left)
   sim
 }
 
@@ -763,8 +810,9 @@ simulate_rep <- function(rates, age, shifts,
     } else {
     # a draw whose expected tree exceeds the ceiling is refused before it is simulated
     if (sbc && is.finite(MAX_LINEAGES)) {
-      while (expected_lineages(lambda, mu, tMax, lShifts) > MAX_LINEAGES) {
+      while ((e <- expected_lineages(lambda, mu, tMax, lShifts)) > MAX_LINEAGES) {
         sim_filtered <<- sim_filtered + 1
+        refuse("expected", th, expected = e)
         redraw()
       }
     }
@@ -774,7 +822,10 @@ simulate_rep <- function(rates, age, shifts,
 
     # a draw that overshot its expectation, or its ceiling on work, is refused before it costs
     # a fossil sampling pass
-    if (sbc && (is.null(sim) || length(sim$TS) > MAX_LINEAGES)) {
+    if (sbc && (is.null(sim) || length(sim$TS) > realized_cap)) {
+      # the constant-rate path never calls rexp.var, so its trees are only checked here
+      if (is.null(sim)) refuse(sim_abort$reason, th, sim_abort$lineages, sim_abort$time)
+      else refuse("lineages", th, length(sim$TS))
       redraw()
       next
     }
@@ -1069,6 +1120,7 @@ simulate_set <- function(n_key, reps, rates, age, base_dir,
   
   # iterate through reps
   for (rep in first:reps) {
+    cur_rep <<- rep
     # print some info
     print(paste0("key: ", n_key, " rep: ", rep, 
                  " seed: ", seeds[rep]))
@@ -1337,6 +1389,18 @@ if (!exists("sim_functions_only")) {
   }
   if (is.finite(MAX_LINEAGES)) {
     keys <- c(keys, "MAX_LINEAGES"); vals <- c(vals, MAX_LINEAGES)
+  }
+  if (is.finite(MAX_REALIZED)) {
+    keys <- c(keys, "MAX_REALIZED"); vals <- c(vals, MAX_REALIZED)
+    cat(sprintf("draws refused for realizing over MAX_REALIZED lineages: %d\n", sim_over_lin))
+  }
+  if (length(refusals)) {
+    rf <- do.call(rbind, refusals)
+    rf_file <- paste0(reps_dir, "refused.tsv")
+    write.table(rf, rf_file, sep = "\t", quote = FALSE, row.names = FALSE,
+                append = first > 1 && file.exists(rf_file),
+                col.names = !(first > 1 && file.exists(rf_file)))
+    cat(sprintf("refused draws -> %s\n", rf_file))
   }
   if (is.finite(SIM_MAX_DRAWS)) {
     keys <- c(keys, "SIM_MAX_DRAWS"); vals <- c(vals, SIM_MAX_DRAWS)

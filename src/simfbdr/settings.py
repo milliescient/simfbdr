@@ -98,6 +98,9 @@ BATCH_SETTINGS = [
 
     ("MAX_LINEAGES", "simulation_limits.max_expected_lineages",
      "a draw expected to bear more lineages than this is refused unsimulated, which truncates the prior"),
+    ("MAX_REALIZED", "simulation_limits.max_lineages",
+     "a simulation that realizes more lineages than this is stopped and theta redrawn. It reads the "
+     "unseen tree, so set it far above any accepted record and check refused.tsv"),
     ("SIM_MAX_DRAWS", "simulation_limits.max_waiting_time_draws",
      "a draw whose simulation needs more waiting times than this is redrawn"),
 ]
