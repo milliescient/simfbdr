@@ -93,7 +93,7 @@ if (ANAGENESIS || SYMMETRIC) {
 }
 if (ANAGENESIS) {
     # regrafts a subtree at a new age or onto a fossil, which mixes the anagenetic events with the topology
-    moves.append( mvWilsonBalding(tr, symmetric=SYMMETRIC, weight=taxa.size()) )
+    moves.append( mvWilsonBalding(tr, weight=taxa.size()) )
 }
 # the first and last appearances, which the tree does not carry
 moves.append( mvStratigraphicRange(tr, weight=taxa.size()) )
